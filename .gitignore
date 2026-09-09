@@ -18,3 +18,5 @@ build/
 .neon
 node_modules/
 package-lock.json
+.moderator_token
+.railway
