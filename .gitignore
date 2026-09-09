@@ -15,3 +15,6 @@ apps/web/.next/
 *.egg-info/
 dist/
 build/
+.neon
+node_modules/
+package-lock.json
