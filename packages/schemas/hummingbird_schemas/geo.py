@@ -39,6 +39,8 @@ STATE_CENTROIDS: dict[str, tuple[float, float]] = {
     "Taraba": (8.0000, 10.7000),
     "Yobe": (12.0000, 11.5000),
     "Zamfara": (12.1222, 6.2236),
+    # National aggregates (no specific state) — country centroid, not an LGA pin
+    "Nigeria": (9.0820, 8.6753),
 }
 
 

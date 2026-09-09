@@ -80,6 +80,15 @@ def detect_state(text: str) -> tuple[Optional[str], Optional[str]]:
         span = _find_span(text, pat)
         if span:
             return normalize_state(state), span
+    # Nationwide aggregate / unspecified location within Nigeria
+    m = re.search(
+        r"\b(?:across|throughout|in)\s+Nigeria\b|\bNigeria\b|\bNigerian\b",
+        text,
+        re.I,
+    )
+    if m:
+        span = text[max(0, m.start() - 20) : min(len(text), m.end() + 20)].strip()
+        return "Nigeria", span
     return None, None
 
 
@@ -117,6 +126,10 @@ def extract_from_bronze(payload: BronzePayload) -> ExtractionResult:
     state, state_span = detect_state(text)
     lga, lga_span = detect_lga(text, state_span)
     status, status_span = detect_status(text)
+
+    # National aggregates must not invent LGA pins
+    if state == "Nigeria":
+        lga, lga_span = None, None
 
     fields: list[ExtractedField] = []
     if event_span:

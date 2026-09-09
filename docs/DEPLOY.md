@@ -60,9 +60,15 @@ Trigger **Actions → Daily incident pipeline → Run workflow**, or locally:
 export DATABASE_URL="..."
 python scripts/migrate.py
 python pipelines/run_daily.py --limit 8
+# force specific articles onto the map:
+python pipelines/run_daily.py --urls-only --urls \
+  'https://www.bbc.com/news/articles/c4g4gpgm1m4o' \
+  'https://www.tvcnews.tv/immigration-arrests-two-kidnap-suspects-recovers-n34m-in-adamawa/'
 # offline test:
 python pipelines/run_daily.py --demo
 ```
+
+Outlets include Punch (`/tags/kidnap/`), Premium Times, Vanguard, Daily Trust, BBC, TVC, Sahara Reporters, and Arise TV.
 
 Auto-publish writes map-ready incidents (casualty/headcount still go to `/moderation`).
 

@@ -47,7 +47,7 @@ class OutletConfig:
 OUTLETS: list[OutletConfig] = [
     OutletConfig(
         name="Punch",
-        list_url="https://punchng.com/?s=kidnap",
+        list_url="https://punchng.com/tags/kidnap/",
         article_link_selector="h2 a, .post-title a, article a",
         base_url="https://punchng.com",
     ),
@@ -69,6 +69,38 @@ OUTLETS: list[OutletConfig] = [
         article_link_selector="h2 a, .entry-title a, article a",
         base_url="https://dailytrust.com",
     ),
+    OutletConfig(
+        name="BBC",
+        list_url="https://www.bbc.com/search?q=nigeria+kidnap",
+        article_link_selector="a[href*='/news/articles/'], a[href*='/news/world/africa/']",
+        base_url="https://www.bbc.com",
+        title_selector="h1",
+        body_selector="article p, main p, [data-component='text-block'] p",
+    ),
+    OutletConfig(
+        name="TVC News",
+        list_url="https://www.tvcnews.tv/?s=kidnap",
+        article_link_selector="h2 a, h3 a, .entry-title a, article a",
+        base_url="https://www.tvcnews.tv",
+        title_selector="h1",
+        body_selector="article p, .entry-content p, .post-content p",
+    ),
+    OutletConfig(
+        name="Sahara Reporters",
+        list_url="https://saharareporters.com/search/node/kidnap",
+        article_link_selector="h2 a, h3 a, .node__title a, article a",
+        base_url="https://saharareporters.com",
+        title_selector="h1",
+    body_selector="article p, .field-name-body p, .node__content p, .content p, p",
+),
+OutletConfig(
+    name="Arise TV",
+    list_url="https://www.arise.tv/?s=kidnap",
+    article_link_selector="h2 a, h3 a, .entry-title a, article a",
+    base_url="https://www.arise.tv",
+    title_selector="h1",
+    body_selector="article p, .entry-content p, .post-content p, .td-post-content p",
+),
 ]
 
 # Google News RSS is more scrape-resistant and returns real publisher URLs.
@@ -89,6 +121,11 @@ KNOWN_OUTLETS = {
     "thisdaylive.com": "THISDAY",
     "tribuneonlineng.com": "Nigerian Tribune",
     "thenationonlineng.net": "The Nation",
+    "bbc.com": "BBC",
+    "bbc.co.uk": "BBC",
+    "tvcnews.tv": "TVC News",
+    "saharareporters.com": "Sahara Reporters",
+    "arise.tv": "Arise TV",
 }
 
 SECURITY_KEYWORDS = re.compile(
@@ -141,17 +178,25 @@ def parse_list_links(html: str, cfg: OutletConfig, limit: int = 10) -> list[str]
 
 def parse_article(html: str, cfg: Optional[OutletConfig] = None) -> tuple[Optional[str], str]:
     soup = BeautifulSoup(html, "html.parser")
-    title_sel = (cfg.title_selector if cfg else "h1") 
+    title_sel = (cfg.title_selector if cfg else "h1")
     body_sel = (
         cfg.body_selector
         if cfg
-        else "article p, .entry-content p, .post-content p, .story-content p, p"
+        else "article p, .entry-content p, .post-content p, .story-content p, .content p, p"
     )
     title_el = soup.select_one(title_sel)
     title = title_el.get_text(strip=True) if title_el else None
     paragraphs = [p.get_text(" ", strip=True) for p in soup.select(body_sel)]
     # Prefer longer article paragraphs; drop nav crumbs
     body = "\n".join(p for p in paragraphs if len(p) > 40)
+    if len(body) < 80:
+        # Fallback for outlets whose primary selectors miss the story body
+        paragraphs = [p.get_text(" ", strip=True) for p in soup.select("p")]
+        body = "\n".join(p for p in paragraphs if len(p) > 40)
+    if len(body) < 80:
+        meta = soup.select_one('meta[name="description"], meta[property="og:description"]')
+        if meta and meta.get("content"):
+            body = meta["content"].strip()
     if len(body) < 80:
         body = "\n".join(p for p in paragraphs if p)
     return title, body
@@ -321,10 +366,13 @@ def fetch_outlet(
     return records
 
 
-def run_news_ingest(limit_per_outlet: int = 5) -> Path:
+def run_news_ingest(limit_per_outlet: int = 5, extra_urls: list[str] | None = None) -> Path:
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_" + uuid.uuid4().hex[:8]
     all_records: list[BronzePayload] = []
     with httpx.Client(headers=BROWSER_HEADERS, timeout=30.0) as client:
+        if extra_urls:
+            print(f"[ingest] explicit URLs ({len(extra_urls)})")
+            all_records.extend(ingest_urls(extra_urls, client=client, run_id=run_id))
         print("[ingest] Google News RSS")
         all_records.extend(fetch_google_news(client, run_id, limit=max(12, limit_per_outlet * 3)))
         for cfg in OUTLETS:
@@ -338,6 +386,73 @@ def run_news_ingest(limit_per_outlet: int = 5) -> Path:
             deduped[rec.url] = rec
     path = write_bronze(deduped.values(), run_id)
     print(f"[ingest] wrote {len(deduped)} bronze records → {path}")
+    return path
+
+
+def ingest_urls(
+    urls: list[str],
+    client: httpx.Client | None = None,
+    run_id: str | None = None,
+) -> list[BronzePayload]:
+    """Force-ingest specific article URLs into bronze-shaped records."""
+    run_id = run_id or (
+        datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_" + uuid.uuid4().hex[:8]
+    )
+    records: list[BronzePayload] = []
+    owns_client = client is None
+    client = client or httpx.Client(headers=BROWSER_HEADERS, timeout=30.0)
+    try:
+        for raw in urls:
+            url = raw.strip()
+            if not url or not is_real_article_url(url):
+                print(f"[warn] skip invalid URL: {raw}")
+                continue
+            try:
+                art = client.get(url, follow_redirects=True, timeout=30.0)
+                art.raise_for_status()
+                final_url = str(art.url)
+                if not is_real_article_url(final_url):
+                    print(f"[warn] resolved to non-article URL: {final_url}")
+                    continue
+                outlet = outlet_for_url(final_url)
+                cfg = next((o for o in OUTLETS if o.name == outlet), None)
+                title, body = parse_article(art.text, cfg)
+                if len(body) < 40:
+                    print(f"[warn] body too short for {final_url}")
+                    continue
+                records.append(
+                    BronzePayload(
+                        content_hash=content_hash(final_url, body),
+                        source_type=SourceType.NEWS,
+                        fetched_at=datetime.now(timezone.utc),
+                        ingest_run_id=run_id,
+                        url=final_url,
+                        outlet=outlet,
+                        title=title,
+                        body=body,
+                        payload={
+                            "outlet": outlet,
+                            "url": final_url,
+                            "title": title,
+                            "body": body,
+                            "via": "explicit_url",
+                        },
+                    )
+                )
+                print(f"[ingest] url ok: {outlet} {final_url}")
+            except Exception as exc:  # noqa: BLE001
+                print(f"[warn] url ingest failed {url}: {exc}")
+    finally:
+        if owns_client:
+            client.close()
+    return records
+
+
+def ingest_urls_to_bronze(urls: list[str]) -> Path:
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_" + uuid.uuid4().hex[:8]
+    records = ingest_urls(urls, run_id=run_id)
+    path = write_bronze(records, run_id)
+    print(f"[ingest] wrote {len(records)} URL bronze records → {path}")
     return path
 
 
@@ -389,8 +504,22 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Hummingbird news → bronze ingest")
     parser.add_argument("--demo", action="store_true", help="Write demo bronze without network")
     parser.add_argument("--limit", type=int, default=5)
+    parser.add_argument(
+        "--urls",
+        nargs="+",
+        help="Force-ingest specific article URLs (skips outlet discovery for those)",
+    )
+    parser.add_argument(
+        "--urls-only",
+        action="store_true",
+        help="Only ingest --urls; do not scrape outlet lists",
+    )
     args = parser.parse_args()
     if args.demo:
         write_demo_bronze()
+    elif args.urls_only:
+        if not args.urls:
+            raise SystemExit("--urls-only requires --urls")
+        ingest_urls_to_bronze(args.urls)
     else:
-        run_news_ingest(limit_per_outlet=args.limit)
+        run_news_ingest(limit_per_outlet=args.limit, extra_urls=args.urls)
