@@ -141,6 +141,9 @@ def process_gold_candidates(gold_path: Path) -> dict[str, int]:
 
 
 def _upsert_source(cur, bronze: dict[str, Any]) -> UUID:
+    url = bronze.get("url") or f"urn:hummingbird:{bronze.get('content_hash')}"
+    if "example.com" in str(url):
+        raise ValueError(f"refusing to publish demo/example URL: {url}")
     source_id = uuid4()
     cur.execute(
         """
@@ -151,7 +154,7 @@ def _upsert_source(cur, bronze: dict[str, Any]) -> UUID:
         """,
         (
             str(source_id),
-            bronze.get("url") or f"urn:hummingbird:{bronze.get('content_hash')}",
+            url,
             bronze.get("outlet") or "unknown",
             bronze.get("source_type") or "news",
             bronze.get("fetched_at") or datetime.now(timezone.utc).isoformat(),
@@ -162,6 +165,7 @@ def _upsert_source(cur, bronze: dict[str, Any]) -> UUID:
     )
     row = cur.fetchone()
     return row[0]
+
 
 
 def publish_incident_from_candidate(
