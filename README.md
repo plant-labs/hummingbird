@@ -13,7 +13,7 @@ protests, and scams with a verification-first pipeline and a live heat-bubble ma
 - **Next.js + MapLibre** — heat bubbles → incident list → source drill-down
 - **Hosting (default):** Vercel (web) · Railway (API) · Neon (PostGIS)
 
-See [docs/METHODOLOGY.md](docs/METHODOLOGY.md) for the codebook.
+See [docs/METHODOLOGY.md](docs/METHODOLOGY.md) for the codebook and [docs/DEPLOY.md](docs/DEPLOY.md) for production deploy.
 
 ## Quick start (local)
 

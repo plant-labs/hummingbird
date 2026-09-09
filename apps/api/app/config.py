@@ -9,7 +9,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://hummingbird:hummingbird@localhost:5432/hummingbird"
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     moderator_token: str = "dev-moderator-token"
-    use_demo_store: bool = True
+    # Production must set USE_DEMO_STORE=false and DATABASE_URL.
+    use_demo_store: bool = False
 
     @property
     def origins(self) -> list[str]:

@@ -1,8 +1,9 @@
-"""Corroboration gates + review queue enqueue from clustered silver candidates."""
+"""Corroboration gates + routing for auto-publish vs human review."""
 
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -11,12 +12,22 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[2]
 GOLD_DIR = ROOT / "data" / "gold"
 
-# Fields that always force human review before publish
-HUMAN_REVIEW_FIELDS = {"victim_count", "casualties", "fatality_count"}
+# Fatality fields always force human review before publish.
+# victim_count may auto-publish with a source citation (still labeled Reported).
+HUMAN_REVIEW_FIELDS = {"casualties", "fatality_count"}
+
+# Default 1 so the live map fills from daily news; set to 2 for stricter methodology.
+AUTO_PUBLISH_MIN_SOURCES = int(os.getenv("AUTO_PUBLISH_MIN_SOURCES", "1"))
 
 
 def compute_verification(candidate: dict[str, Any]) -> tuple[str, str]:
-    """Return (verification_status, routing): auto_reported | review | quarantine."""
+    """Return (verification_status, route).
+
+    Routes:
+      - auto_publish: enough independent outlets (or official), no casualty/headcount fields
+      - review: needs human (casualty fields, or weak cases still worth reviewing)
+      - quarantine: too weak
+    """
     outlets = candidate.get("independent_outlets") or []
     corroboration = int(candidate.get("corroboration_count") or len(outlets))
     members = candidate.get("members") or []
@@ -31,15 +42,17 @@ def compute_verification(candidate: dict[str, Any]) -> tuple[str, str]:
     field_names = {f.get("field_name") for f in fields}
     needs_human = bool(field_names & HUMAN_REVIEW_FIELDS)
 
-    if has_official and not needs_human:
-        return "reported", "review"  # still human gate for first publish in MVP
-    if corroboration >= 2 and not needs_human:
-        return "reported", "review"
-    if corroboration >= 2 and needs_human:
-        return "reported", "review"
-    if corroboration == 1 and has_official:
-        return "reported", "review"
-    if corroboration <= 1:
+    strong = has_official or corroboration >= max(AUTO_PUBLISH_MIN_SOURCES, 1)
+    # Stricter label when only one non-official source
+    status = "reported" if (has_official or corroboration >= 2) else (
+        "reported" if corroboration >= 1 else "unconfirmed"
+    )
+
+    if strong and not needs_human and corroboration >= 1:
+        return status, "auto_publish"
+    if (strong or corroboration >= 1) and needs_human:
+        return status, "review"
+    if corroboration == 1:
         return "unconfirmed", "review"
     return "unconfirmed", "quarantine"
 
@@ -59,9 +72,9 @@ def run_verify(clustered_path: Path) -> Path:
                 "queue_id": str(uuid4()),
                 "verification_status": status,
                 "route": route,
-                "priority": 40 if status == "reported" else 80,
+                "priority": 20 if route == "auto_publish" else (40 if status == "reported" else 80),
                 "reason": (
-                    f"corroboration={candidate.get('corroboration_count')}; "
+                    f"route={route}; corroboration={candidate.get('corroboration_count')}; "
                     f"outlets={candidate.get('independent_outlets')}"
                 ),
                 "candidate": candidate,

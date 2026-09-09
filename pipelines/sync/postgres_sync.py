@@ -53,6 +53,93 @@ def enqueue_candidates(gold_path: Path) -> int:
     return count
 
 
+def _already_published(cur, preview: dict[str, Any]) -> bool:
+    """Skip duplicates: same state + headline within 3 days."""
+    headline = (preview.get("headline") or "").strip()
+    state = (preview.get("state") or "").strip()
+    if not headline or not state:
+        return False
+    cur.execute(
+        """
+        SELECT 1 FROM incidents
+        WHERE state = %s
+          AND headline = %s
+          AND published_at IS NOT NULL
+          AND date_reported >= CURRENT_DATE - INTERVAL '3 days'
+        LIMIT 1
+        """,
+        (state, headline),
+    )
+    return cur.fetchone() is not None
+
+
+def process_gold_candidates(gold_path: Path) -> dict[str, int]:
+    """Auto-publish strong candidates; enqueue the rest for human review."""
+    stats = {"auto_published": 0, "enqueued": 0, "skipped_duplicate": 0, "quarantined": 0}
+    with psycopg.connect(db_conninfo()) as conn:
+        with conn.cursor() as cur:
+            with gold_path.open(encoding="utf-8") as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    item = json.loads(line)
+                    route = item.get("route") or "review"
+                    preview = item.get("publish_preview") or {}
+
+                    if route == "quarantine":
+                        stats["quarantined"] += 1
+                        continue
+
+                    if _already_published(cur, preview):
+                        stats["skipped_duplicate"] += 1
+                        continue
+
+                    if route == "auto_publish":
+                        verification = item.get("verification_status") or "reported"
+                        incident_id = publish_incident_from_candidate(
+                            cur, item, verification_status=verification
+                        )
+                        cur.execute(
+                            """
+                            INSERT INTO review_queue (
+                              queue_id, incident_id, candidate_json, status, priority, reason,
+                              reviewed_at, reviewed_by
+                            ) VALUES (%s, %s, %s, 'approved', %s, %s, now(), 'auto_publish')
+                            ON CONFLICT (queue_id) DO NOTHING
+                            """,
+                            (
+                                item["queue_id"],
+                                str(incident_id),
+                                Json(item),
+                                item.get("priority", 20),
+                                item.get("reason"),
+                            ),
+                        )
+                        stats["auto_published"] += 1
+                    else:
+                        cur.execute(
+                            """
+                            INSERT INTO review_queue (queue_id, candidate_json, status, priority, reason)
+                            VALUES (%s, %s, 'pending', %s, %s)
+                            ON CONFLICT (queue_id) DO NOTHING
+                            """,
+                            (
+                                item["queue_id"],
+                                Json(item),
+                                item.get("priority", 100),
+                                item.get("reason"),
+                            ),
+                        )
+                        stats["enqueued"] += 1
+
+            if stats["auto_published"]:
+                cur.execute("SELECT refresh_geo_agg_cache()")
+        conn.commit()
+    print(f"[sync] {stats}")
+    return stats
+
+
+
 def _upsert_source(cur, bronze: dict[str, Any]) -> UUID:
     source_id = uuid4()
     cur.execute(
@@ -176,10 +263,11 @@ def publish_incident_from_candidate(
             str(incident_id),
             extraction.get("current_status") or "ongoing",
             str(primary_source),
-            "Published from review queue",
+            "Published from pipeline",
         ),
     )
     return incident_id
+
 
 
 def approve_queue_item(queue_id: str, reviewer: str = "moderator") -> Optional[str]:
@@ -231,5 +319,14 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("gold_path", type=Path)
+    parser.add_argument(
+        "--enqueue-only",
+        action="store_true",
+        help="Only enqueue to review_queue (no auto-publish)",
+    )
     args = parser.parse_args()
-    enqueue_candidates(args.gold_path)
+    if args.enqueue_only:
+        enqueue_candidates(args.gold_path)
+    else:
+        process_gold_candidates(args.gold_path)
+
