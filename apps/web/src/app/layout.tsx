@@ -15,6 +15,13 @@ const sans = Source_Sans_3({
 export const metadata: Metadata = {
   title: "Hummingbird",
   description: "Open-source security intelligence for Nigeria — sourced, verified, live.",
+  icons: {
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/favicon.png", type: "image/png", sizes: "32x32" },
+    ],
+    apple: [{ url: "/icon-192.png" }],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

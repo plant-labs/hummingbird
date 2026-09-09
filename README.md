@@ -47,6 +47,8 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 
 Open http://localhost:3000 — click a heat bubble → incident list → sources.
 
+Report a tip: http://localhost:3000/report  
+About: http://localhost:3000/about  
 Moderation UI: http://localhost:3000/moderation  
 Auth header token default: `dev-moderator-token`
 

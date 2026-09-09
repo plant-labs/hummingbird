@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     moderator_token: str = "dev-moderator-token"
     # Production must set USE_DEMO_STORE=false and DATABASE_URL.
     use_demo_store: bool = False
+    # Optional Slack/Discord/generic webhook for new crowd tips.
+    report_notify_webhook: str = ""
 
     @property
     def origins(self) -> list[str]:

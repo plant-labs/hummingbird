@@ -9,6 +9,8 @@ import {
   API_BASE,
 } from "@/lib/api";
 import type { GeoBubble, IncidentDetail, IncidentSummary } from "@/lib/types";
+import AppMenu from "./AppMenu";
+import HummingbirdMark from "./HummingbirdMark";
 import IncidentListPanel from "./IncidentListPanel";
 import IncidentDetailPanel from "./IncidentDetailPanel";
 
@@ -97,24 +99,32 @@ export default function MapExplorer() {
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-mist/80 via-transparent to-transparent" />
 
       <header className="pointer-events-none absolute left-0 right-0 top-0 z-10 px-5 pt-5 md:px-8 md:pt-7">
-        <div className="pointer-events-auto max-w-xl">
-          <p className="text-xs uppercase tracking-[0.22em] text-moss/80">Nigeria · security intelligence</p>
-          <h1 className="font-display text-4xl text-ink md:text-5xl">Hummingbird</h1>
-          <p className="mt-2 max-w-md text-sm leading-relaxed text-ink/75 md:text-base">
-            Live incidents across 36 states — every claim grounded in a source. Click a heat
-            bubble to explore.
-          </p>
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-ink/60">
-            <span className="inline-flex items-center gap-2">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-signal" />
-              {liveNote}
-            </span>
-            <span>{bubbles.reduce((n, b) => n + b.count, 0)} published</span>
-            <a href="/moderation" className="pointer-events-auto text-fern underline-offset-2 hover:underline">
-              Moderation
-            </a>
+        <div className="flex items-start gap-4">
+          <AppMenu />
+          <div className="pointer-events-auto max-w-xl">
+            <p className="text-xs uppercase tracking-[0.22em] text-moss/80">
+              Nigeria · security intelligence
+            </p>
+            <div className="mt-1 flex items-center gap-2.5 md:gap-3">
+              <HummingbirdMark size={48} priority />
+              <h1 className="font-display text-4xl text-ink md:text-5xl">Hummingbird</h1>
+            </div>
+            <p className="mt-2 max-w-md text-sm leading-relaxed text-ink/75 md:text-base">
+              Live incidents across 36 states — every claim grounded in a source. Click a heat
+              bubble to explore.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-ink/60">
+              <span className="inline-flex items-center gap-2">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-signal" />
+                {liveNote}
+              </span>
+              <span>{bubbles.reduce((n, b) => n + b.count, 0)} published</span>
+              {bubbles.length === 0 && !error && (
+                <span className="text-alert">No map bubbles yet — check API connection</span>
+              )}
+            </div>
+            {error && <p className="mt-2 text-sm text-alert">{error}</p>}
           </div>
-          {error && <p className="mt-2 text-sm text-alert">{error}</p>}
         </div>
       </header>
 

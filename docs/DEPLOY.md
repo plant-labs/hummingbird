@@ -21,7 +21,9 @@ Production stack: **Neon (PostGIS)** + **Railway (API)** + **Vercel (web)** + **
 
 In https://github.com/plant-labs/hummingbird → Settings → Secrets:
 
-- `DATABASE_URL` = Neon URL
+- `DATABASE_URL` = Neon URL **without quotes**  
+  Example shape: `postgresql://USER:PASSWORD@ep-….neon.tech/neondb?sslmode=require`  
+  Do **not** paste `DATABASE_URL=` or surrounding `"..."`.
 
 This powers the daily workflow in `.github/workflows/daily-pipeline.yml` (06:00 UTC, also manual “Run workflow”).
 
@@ -80,6 +82,7 @@ Auto-publish writes map-ready incidents (casualty/headcount still go to `/modera
 | Railway | `USE_DEMO_STORE` | `false` |
 | Railway | `CORS_ORIGINS` | Vercel origin(s) |
 | Railway | `MODERATOR_TOKEN` | shared secret |
+| Railway | `REPORT_NOTIFY_WEBHOOK` | optional Slack/Discord URL for new tips |
 | Vercel | `NEXT_PUBLIC_API_URL` | Railway origin |
 | Vercel | `NEXT_PUBLIC_MODERATOR_TOKEN` | same secret (Phase-1) |
 | GitHub Actions | `DATABASE_URL` | Neon |

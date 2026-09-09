@@ -10,6 +10,9 @@ from pathlib import Path
 import psycopg
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "pipelines" / "sync"))
+from db_url import normalize_database_url  # noqa: E402
+
 MIGRATIONS = [
     ROOT / "infra" / "postgres" / "001_init.sql",
     ROOT / "infra" / "postgres" / "002_refresh_geo_agg.sql",
@@ -17,9 +20,15 @@ MIGRATIONS = [
 
 
 def main() -> None:
-    url = os.environ.get("DATABASE_URL")
-    if not url:
+    raw = os.environ.get("DATABASE_URL")
+    if not raw:
         print("DATABASE_URL is required", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        url = normalize_database_url(raw)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
         sys.exit(1)
 
     with psycopg.connect(url) as conn:

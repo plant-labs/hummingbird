@@ -14,14 +14,17 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
 from hummingbird_schemas.geo import centroid_for_state
+from db_url import normalize_database_url
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def db_conninfo() -> str:
-    return os.getenv(
-        "DATABASE_URL",
-        "postgresql://hummingbird:hummingbird@localhost:5432/hummingbird",
+    return normalize_database_url(
+        os.getenv(
+            "DATABASE_URL",
+            "postgresql://hummingbird:hummingbird@localhost:5432/hummingbird",
+        )
     )
 
 
@@ -188,6 +191,12 @@ def publish_incident_from_candidate(
     lga = extraction.get("lga")
     lat_lng = centroid_for_state(state)
     lat, lng = (lat_lng or (9.0, 8.0))
+    if extraction.get("lat") is not None and extraction.get("lng") is not None:
+        try:
+            lat = float(extraction["lat"])
+            lng = float(extraction["lng"])
+        except (TypeError, ValueError):
+            pass
 
     incident_id = uuid4()
     cur.execute(

@@ -415,6 +415,25 @@ class DemoStore:
     def list_review(self, status: str = "pending") -> list[dict[str, Any]]:
         return [r for r in self.review if r["status"] == status]
 
+    def enqueue_tip(self, candidate: dict[str, Any]) -> str:
+        queue_id = candidate["queue_id"]
+        self.review.append(
+            {
+                "queue_id": queue_id,
+                "incident_id": None,
+                "candidate_json": deepcopy(candidate),
+                "status": "pending",
+                "priority": candidate.get("priority", 40),
+                "reason": candidate.get("reason"),
+                "reviewer_notes": None,
+                "created_at": candidate.get("created_at")
+                or datetime.now(timezone.utc).isoformat(),
+                "reviewed_at": None,
+                "reviewed_by": None,
+            }
+        )
+        return queue_id
+
     def approve(self, queue_id: str, reviewer: str) -> str | None:
         for r in self.review:
             if r["queue_id"] == queue_id and r["status"] == "pending":

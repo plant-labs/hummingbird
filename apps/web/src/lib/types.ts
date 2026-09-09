@@ -72,6 +72,7 @@ export type ReviewItem = {
   reason?: string | null;
   created_at: string;
   candidate_json: {
+    route?: string;
     publish_preview?: {
       event_type?: string;
       state?: string;
@@ -79,6 +80,21 @@ export type ReviewItem = {
       headline?: string;
       corroboration_count?: number;
       verification_status?: string;
+      current_status?: string;
+      date_occurred?: string | null;
+      date_reported?: string;
+      source_url?: string | null;
+      has_attachment?: boolean;
+    };
+    tip?: {
+      description?: string;
+      contact_name?: string | null;
+      contact_email?: string | null;
+      attachment?: {
+        filename?: string;
+        content_type?: string;
+        size?: number;
+      } | null;
     };
     reason?: string;
   };

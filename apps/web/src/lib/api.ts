@@ -53,4 +53,26 @@ export async function rejectReview(queueId: string, notes?: string): Promise<voi
   });
 }
 
+export async function submitIncidentReport(
+  formData: FormData,
+): Promise<{ queue_id: string; notified: boolean }> {
+  const res = await fetch(`${API_BASE}/api/reports`, {
+    method: "POST",
+    body: formData,
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    let detail = `API ${res.status}`;
+    try {
+      const body = await res.json();
+      if (typeof body?.detail === "string") detail = body.detail;
+      else if (Array.isArray(body?.detail)) detail = body.detail.map((d: { msg?: string }) => d.msg).join("; ");
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
 export { API_BASE };

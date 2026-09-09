@@ -49,7 +49,7 @@ export default function ModerationQueue() {
 
   return (
     <main className="min-h-screen px-5 py-8 md:px-10">
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto max-w-3xl pt-10">
         <Link href="/" className="text-sm text-fern hover:underline">
           ← Map
         </Link>
@@ -68,12 +68,15 @@ export default function ModerationQueue() {
           )}
           {items.map((item) => {
             const preview = item.candidate_json?.publish_preview || {};
+            const tip = item.candidate_json?.tip;
+            const isCrowd = item.candidate_json?.route === "crowd_tip";
             return (
               <li key={item.queue_id} className="border border-ink/10 bg-white/70 p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-xs uppercase tracking-[0.16em] text-moss/70">
                       {preview.event_type || "unknown"} · priority {item.priority}
+                      {isCrowd ? " · crowd tip" : ""}
                     </p>
                     <h2 className="mt-1 font-display text-2xl text-ink">
                       {preview.headline || "Untitled candidate"}
@@ -90,6 +93,37 @@ export default function ModerationQueue() {
                     {item.reason && (
                       <p className="mt-2 text-sm text-ink/60">{item.reason}</p>
                     )}
+                    {tip?.description && (
+                      <p className="mt-3 text-sm leading-relaxed text-ink/75">{tip.description}</p>
+                    )}
+                    <div className="mt-2 space-y-1 text-xs text-ink/55">
+                      {preview.source_url && (
+                        <p>
+                          Source:{" "}
+                          <a
+                            href={preview.source_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-fern underline-offset-2 hover:underline"
+                          >
+                            {preview.source_url}
+                          </a>
+                        </p>
+                      )}
+                      {tip?.attachment && (
+                        <p>
+                          Attachment: {tip.attachment.filename || "file"}
+                          {tip.attachment.size != null
+                            ? ` (${Math.round(tip.attachment.size / 1024)} KB)`
+                            : ""}
+                        </p>
+                      )}
+                      {(tip?.contact_email || tip?.contact_name) && (
+                        <p>
+                          Contact: {[tip.contact_name, tip.contact_email].filter(Boolean).join(" · ")}
+                        </p>
+                      )}
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     <button

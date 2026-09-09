@@ -15,29 +15,38 @@ type Props = {
 function toGeoJSON(bubbles: GeoBubble[]): GeoJSON.FeatureCollection {
   return {
     type: "FeatureCollection",
-    features: bubbles.map((b) => ({
-      type: "Feature",
-      properties: {
-        geo_id: b.geo_id,
-        name: b.name,
-        count: b.count,
-        intensity: b.intensity,
-        color: bubbleColor(b.dominant_verification),
-        radius: Math.min(48, 14 + Math.log(b.count + 1) * 12),
-      },
-      geometry: {
-        type: "Point",
-        coordinates: [b.lng, b.lat],
-      },
-    })),
+    features: bubbles
+      .filter((b) => Number.isFinite(Number(b.lat)) && Number.isFinite(Number(b.lng)))
+      .map((b) => ({
+        type: "Feature",
+        properties: {
+          geo_id: b.geo_id,
+          name: b.name,
+          count: b.count,
+          intensity: b.intensity,
+          color: bubbleColor(b.dominant_verification),
+          radius: Math.min(48, 14 + Math.log(b.count + 1) * 12),
+        },
+        geometry: {
+          type: "Point",
+          coordinates: [Number(b.lng), Number(b.lat)],
+        },
+      })),
   };
 }
 
 export default function HeatMap({ bubbles, selectedGeoId, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
+  const bubblesRef = useRef(bubbles);
   const onSelectRef = useRef(onSelect);
+  bubblesRef.current = bubbles;
   onSelectRef.current = onSelect;
+
+  const applyBubbles = (map: Map, data: GeoBubble[]) => {
+    const source = map.getSource("bubbles") as GeoJSONSource | undefined;
+    if (source) source.setData(toGeoJSON(data));
+  };
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -72,7 +81,7 @@ export default function HeatMap({ bubbles, selectedGeoId, onSelect }: Props) {
     map.on("load", () => {
       map.addSource("bubbles", {
         type: "geojson",
-        data: toGeoJSON([]),
+        data: toGeoJSON(bubblesRef.current),
       });
 
       map.addLayer({
@@ -111,11 +120,12 @@ export default function HeatMap({ bubbles, selectedGeoId, onSelect }: Props) {
         const feature = e.features?.[0];
         if (!feature) return;
         const geoId = feature.properties?.geo_id as string;
-        const match = (map.getSource("bubbles") as GeoJSONSource)
-        // resolve from latest bubbles via event detail
-        const evt = new CustomEvent<string>("hummingbird:select-bubble", { detail: geoId });
-        window.dispatchEvent(evt);
+        window.dispatchEvent(
+          new CustomEvent<string>("hummingbird:select-bubble", { detail: geoId }),
+        );
       });
+
+      applyBubbles(map, bubblesRef.current);
     });
 
     mapRef.current = map;
@@ -128,34 +138,37 @@ export default function HeatMap({ bubbles, selectedGeoId, onSelect }: Props) {
   useEffect(() => {
     const handler = (e: Event) => {
       const geoId = (e as CustomEvent<string>).detail;
-      const bubble = bubbles.find((b) => b.geo_id === geoId);
+      const bubble = bubblesRef.current.find((b) => b.geo_id === geoId);
       if (bubble) onSelectRef.current(bubble);
     };
     window.addEventListener("hummingbird:select-bubble", handler);
     return () => window.removeEventListener("hummingbird:select-bubble", handler);
-  }, [bubbles]);
+  }, []);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) {
-      const t = setTimeout(() => {
-        const m = mapRef.current;
-        if (m?.getSource("bubbles")) {
-          (m.getSource("bubbles") as GeoJSONSource).setData(toGeoJSON(bubbles));
-        }
-      }, 400);
-      return () => clearTimeout(t);
+    if (!map) return;
+
+    if (map.getSource("bubbles")) {
+      applyBubbles(map, bubbles);
+      return;
     }
-    const source = map.getSource("bubbles") as GeoJSONSource | undefined;
-    if (source) source.setData(toGeoJSON(bubbles));
+
+    const onLoad = () => applyBubbles(map, bubblesRef.current);
+    map.once("load", onLoad);
+    return () => {
+      map.off("load", onLoad);
+    };
   }, [bubbles]);
 
   useEffect(() => {
     if (!selectedGeoId || !mapRef.current) return;
     const bubble = bubbles.find((b) => b.geo_id === selectedGeoId);
-    if (!bubble) return;
+    if (!bubble || !Number.isFinite(Number(bubble.lat)) || !Number.isFinite(Number(bubble.lng))) {
+      return;
+    }
     mapRef.current.easeTo({
-      center: [bubble.lng, bubble.lat],
+      center: [Number(bubble.lng), Number(bubble.lat)],
       zoom: Math.max(mapRef.current.getZoom(), 6.2),
       duration: 700,
     });
