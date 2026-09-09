@@ -1,0 +1,16 @@
+[project]
+name = "hummingbird-schemas"
+version = "0.1.0"
+description = "Shared Pydantic schemas for Hummingbird"
+requires-python = ">=3.10"
+dependencies = [
+  "pydantic>=2.0,<3",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["hummingbird_schemas*"]

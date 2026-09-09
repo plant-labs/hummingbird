@@ -1,0 +1,27 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: hummingbird
+      POSTGRES_PASSWORD: hummingbird
+      POSTGRES_DB: hummingbird
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql
+      - ./postgres/002_refresh_geo_agg.sql:/docker-entrypoint-initdb.d/002_refresh_geo_agg.sql
+      - ./postgres/003_seed.sql:/docker-entrypoint-initdb.d/003_seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hummingbird -d hummingbird"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  pgdata:

@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink: #14201b;
+  --moss: #1f3d32;
+  --fern: #2f6b4f;
+  --sand: #e8e2d6;
+  --mist: #f3efe6;
+  --alert: #c45c26;
+  --signal: #0e7c6b;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  color: var(--ink);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(47, 107, 79, 0.18), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgba(196, 92, 38, 0.12), transparent 55%),
+    linear-gradient(180deg, #f7f4ee 0%, #ebe6db 100%);
+}
+
+.maplibregl-popup-content {
+  font-family: var(--font-sans);
+  border-radius: 0;
+  padding: 0.5rem 0.75rem;
+  box-shadow: 0 8px 24px rgba(20, 32, 27, 0.18);
+}
