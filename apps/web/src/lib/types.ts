@@ -16,6 +16,8 @@ export type GeoBubble = {
   intensity: number;
   by_type: Record<string, number>;
   dominant_verification?: VerificationStatus | null;
+  /** captive = still held; resolved = released or rescued */
+  dominant_outcome?: "captive" | "resolved" | null;
 };
 
 export type IncidentSummary = {

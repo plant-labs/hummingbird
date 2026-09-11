@@ -1,7 +1,7 @@
 "use client";
 
 import type { IncidentDetail } from "@/lib/types";
-import { statusLabel, verificationLabel } from "@/lib/labels";
+import { outcomeTone, statusLabel, verificationLabel, verificationTone } from "@/lib/labels";
 
 type Props = {
   detail: IncidentDetail | null;
@@ -9,7 +9,30 @@ type Props = {
   onBack: () => void;
 };
 
+const VERIFICATION_STEPS = [
+  { key: "reported", label: "Reported" },
+  { key: "verified", label: "Verified" },
+  { key: "official_confirmation", label: "Official" },
+] as const;
+
+function verificationRank(status?: string | null): number {
+  switch (status) {
+    case "official_confirmation":
+      return 3;
+    case "verified":
+      return 2;
+    case "reported":
+      return 1;
+    default:
+      return 0;
+  }
+}
+
 export default function IncidentDetailPanel({ detail, loading, onBack }: Props) {
+  const rank = verificationRank(detail?.verification_status);
+  const vTone = verificationTone(detail?.verification_status);
+  const oTone = outcomeTone(detail?.current_status);
+
   return (
     <aside className="pointer-events-auto flex h-full w-full max-w-md flex-col border-l border-ink/10 bg-mist/95 shadow-[-16px_0_40px_rgba(20,32,27,0.12)] backdrop-blur-md">
       <header className="border-b border-ink/10 px-5 py-4">
@@ -25,12 +48,40 @@ export default function IncidentDetailPanel({ detail, loading, onBack }: Props) 
             <p className="mt-1 text-sm text-ink/70">
               {[detail.lga, detail.state].filter(Boolean).join(", ")} · reported {detail.date_reported}
             </p>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs">
-              <span className="bg-fern/10 px-2 py-0.5 text-fern">
-                {verificationLabel(detail.verification_status)}
-                {detail.corroboration_count > 0 ? ` · ${detail.corroboration_count} sources` : ""}
-              </span>
-              <span className="bg-alert/10 px-2 py-0.5 text-alert">
+
+            <div className="mt-4">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-moss/70">Verification</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {VERIFICATION_STEPS.map((step, idx) => {
+                  const active = rank >= idx + 1;
+                  const current = detail.verification_status === step.key;
+                  return (
+                    <span
+                      key={step.key}
+                      className={`px-2.5 py-1 text-xs ${
+                        current
+                          ? `${vTone.bg} ${vTone.text} ring-1 ring-current/30`
+                          : active
+                            ? "bg-ink/10 text-ink/70"
+                            : "bg-ink/5 text-ink/35"
+                      }`}
+                    >
+                      {step.label}
+                    </span>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-xs text-ink/55">
+                Current: {verificationLabel(detail.verification_status)}
+                {detail.corroboration_count > 0
+                  ? ` · ${detail.corroboration_count} source${detail.corroboration_count === 1 ? "" : "s"}`
+                  : ""}
+              </p>
+            </div>
+
+            <div className="mt-3">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-moss/70">Release status</p>
+              <span className={`mt-2 inline-block px-2.5 py-1 text-xs ${oTone.bg} ${oTone.text}`}>
                 {statusLabel(detail.current_status)}
               </span>
             </div>

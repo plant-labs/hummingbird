@@ -95,3 +95,4 @@ class GeoBubble(BaseModel):
     intensity: float
     by_type: dict[str, int] = Field(default_factory=dict)
     dominant_verification: Optional[VerificationStatus] = None
+    dominant_outcome: Optional[str] = None  # captive | resolved

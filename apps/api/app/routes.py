@@ -128,7 +128,7 @@ def map_bubbles(
     cached = fetch_all(
         """
         SELECT geo_id, level, name, state, lga, lat, lng, count, intensity,
-               by_type, dominant_verification
+               by_type, dominant_verification, dominant_outcome
         FROM geo_agg_cache
         WHERE level = %s OR (%s = 'state' AND level = 'state')
         ORDER BY count DESC
@@ -146,6 +146,7 @@ def map_bubbles(
                     **r,
                     "by_type": r["by_type"] or {},
                     "dominant_verification": r["dominant_verification"],
+                    "dominant_outcome": r.get("dominant_outcome") or "captive",
                 }
                 for r in rows
             ]
@@ -158,6 +159,7 @@ def map_bubbles(
                     **r,
                     "by_type": r["by_type"] or {},
                     "dominant_verification": r["dominant_verification"],
+                    "dominant_outcome": r.get("dominant_outcome") or "captive",
                 }
                 for r in state_rows
             ]

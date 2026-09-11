@@ -41,6 +41,17 @@ export default function MapExplorer() {
   }, [loadBubbles]);
 
   useEffect(() => {
+    const onDismiss = () => {
+      setSelected(null);
+      setDetail(null);
+      setIncidents([]);
+      setDetailLoading(false);
+    };
+    window.addEventListener("hummingbird:dismiss-panel", onDismiss);
+    return () => window.removeEventListener("hummingbird:dismiss-panel", onDismiss);
+  }, []);
+
+  useEffect(() => {
     const es = new EventSource(`${API_BASE}/api/stream`);
     es.onmessage = (msg) => {
       try {
@@ -129,9 +140,8 @@ export default function MapExplorer() {
       </header>
 
       <div className="pointer-events-none absolute bottom-4 left-4 z-10 flex gap-3 text-[11px] text-ink/70 md:bottom-6 md:left-6">
-        <LegendDot color="#c45c26" label="Reported" />
-        <LegendDot color="#2f6b4f" label="Verified" />
-        <LegendDot color="#0e7c6b" label="Official" />
+        <LegendDot color="#c45c26" label="Captive" />
+        <LegendDot color="#2f6b4f" label="Released / rescued" />
       </div>
 
       {(selected || detail) && (

@@ -16,6 +16,7 @@ from db_url import normalize_database_url  # noqa: E402
 MIGRATIONS = [
     ROOT / "infra" / "postgres" / "001_init.sql",
     ROOT / "infra" / "postgres" / "002_refresh_geo_agg.sql",
+    ROOT / "infra" / "postgres" / "004_geo_outcome.sql",
 ]
 
 

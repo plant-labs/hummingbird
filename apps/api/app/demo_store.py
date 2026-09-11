@@ -358,6 +358,12 @@ class DemoStore:
             for it in items:
                 counts[it["verification_status"]] = counts.get(it["verification_status"], 0) + 1
             dominant = max(counts, key=counts.get) if counts else None
+            resolved = {"released", "rescued"}
+            outcome = (
+                "resolved"
+                if all(it.get("current_status") in resolved for it in items)
+                else "captive"
+            )
             out.append(
                 {
                     "geo_id": geo_id,
@@ -371,6 +377,7 @@ class DemoStore:
                     "intensity": math.log(len(items) + 1),
                     "by_type": by_type,
                     "dominant_verification": dominant,
+                    "dominant_outcome": outcome,
                 }
             )
         return out

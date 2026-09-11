@@ -1,7 +1,7 @@
 "use client";
 
 import type { IncidentSummary } from "@/lib/types";
-import { statusLabel, verificationLabel } from "@/lib/labels";
+import { outcomeTone, statusLabel, verificationLabel, verificationTone } from "@/lib/labels";
 
 type Props = {
   placeName: string;
@@ -48,30 +48,34 @@ export default function IncidentListPanel({
           <p className="px-2 py-6 text-sm text-ink/60">No published incidents for this place.</p>
         )}
         <ul className="space-y-2">
-          {incidents.map((inc) => (
-            <li key={inc.incident_id}>
-              <button
-                type="button"
-                onClick={() => onSelectIncident(inc.incident_id)}
-                className="w-full border border-ink/10 bg-white/70 px-4 py-3 text-left transition hover:border-fern/40 hover:bg-white"
-              >
-                <div className="flex items-center justify-between gap-2 text-[11px] uppercase tracking-wide text-ink/55">
-                  <span>{inc.event_type}</span>
-                  <span>{inc.date_reported}</span>
-                </div>
-                <p className="mt-1 font-medium text-ink">{inc.headline || "Untitled incident"}</p>
-                <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                  <span className="bg-fern/10 px-2 py-0.5 text-fern">
-                    {verificationLabel(inc.verification_status)}
-                    {inc.corroboration_count > 0 ? ` · ${inc.corroboration_count} sources` : ""}
-                  </span>
-                  <span className="bg-alert/10 px-2 py-0.5 text-alert">
-                    {statusLabel(inc.current_status)}
-                  </span>
-                </div>
-              </button>
-            </li>
-          ))}
+          {incidents.map((inc) => {
+            const vTone = verificationTone(inc.verification_status);
+            const oTone = outcomeTone(inc.current_status);
+            return (
+              <li key={inc.incident_id}>
+                <button
+                  type="button"
+                  onClick={() => onSelectIncident(inc.incident_id)}
+                  className="w-full border border-ink/10 bg-white/70 px-4 py-3 text-left transition hover:border-fern/40 hover:bg-white"
+                >
+                  <div className="flex items-center justify-between gap-2 text-[11px] uppercase tracking-wide text-ink/55">
+                    <span>{inc.event_type}</span>
+                    <span>{inc.date_reported}</span>
+                  </div>
+                  <p className="mt-1 font-medium text-ink">{inc.headline || "Untitled incident"}</p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                    <span className={`${vTone.bg} ${vTone.text} px-2 py-0.5`}>
+                      {verificationLabel(inc.verification_status)}
+                      {inc.corroboration_count > 0 ? ` · ${inc.corroboration_count} sources` : ""}
+                    </span>
+                    <span className={`${oTone.bg} ${oTone.text} px-2 py-0.5`}>
+                      {statusLabel(inc.current_status)}
+                    </span>
+                  </div>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       </div>
     </aside>

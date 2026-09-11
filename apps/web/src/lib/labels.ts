@@ -17,15 +17,39 @@ export function statusLabel(status: string): string {
   return status.replaceAll("_", " ");
 }
 
-export function bubbleColor(status?: string | null): string {
+/** Map bubble color by release outcome (not verification). */
+export function bubbleColor(outcome?: string | null): string {
+  switch (outcome) {
+    case "resolved":
+      return "#2f6b4f"; // released / rescued
+    case "captive":
+      return "#c45c26"; // still held / ongoing
+    default:
+      return "#c45c26";
+  }
+}
+
+export function isResolvedStatus(status?: string | null): boolean {
+  return status === "released" || status === "rescued";
+}
+
+/** Verification chip colors shown inside report panels. */
+export function verificationTone(status?: string | null): { bg: string; text: string } {
   switch (status) {
     case "official_confirmation":
-      return "#0e7c6b";
+      return { bg: "bg-signal/15", text: "text-signal" };
     case "verified":
-      return "#2f6b4f";
+      return { bg: "bg-fern/15", text: "text-fern" };
     case "reported":
-      return "#c45c26";
+      return { bg: "bg-alert/15", text: "text-alert" };
     default:
-      return "#8a7a5c";
+      return { bg: "bg-ink/10", text: "text-ink/60" };
   }
+}
+
+export function outcomeTone(status?: string | null): { bg: string; text: string } {
+  if (isResolvedStatus(status)) {
+    return { bg: "bg-fern/15", text: "text-fern" };
+  }
+  return { bg: "bg-alert/15", text: "text-alert" };
 }

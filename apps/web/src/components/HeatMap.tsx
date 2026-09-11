@@ -24,7 +24,7 @@ function toGeoJSON(bubbles: GeoBubble[]): GeoJSON.FeatureCollection {
           name: b.name,
           count: b.count,
           intensity: b.intensity,
-          color: bubbleColor(b.dominant_verification),
+          color: bubbleColor(b.dominant_outcome),
           radius: Math.min(48, 14 + Math.log(b.count + 1) * 12),
         },
         geometry: {
@@ -123,6 +123,12 @@ export default function HeatMap({ bubbles, selectedGeoId, onSelect }: Props) {
         window.dispatchEvent(
           new CustomEvent<string>("hummingbird:select-bubble", { detail: geoId }),
         );
+      });
+
+      map.on("click", (e) => {
+        const hits = map.queryRenderedFeatures(e.point, { layers: ["bubbles-core"] });
+        if (hits.length > 0) return;
+        window.dispatchEvent(new CustomEvent("hummingbird:dismiss-panel"));
       });
 
       applyBubbles(map, bubblesRef.current);
