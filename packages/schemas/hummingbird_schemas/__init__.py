@@ -18,7 +18,7 @@ from .incident import (
 )
 from .source import SourceCreate, SourceRecord
 from .extraction import ExtractedField, ExtractionResult, BronzePayload
-from .geo import STATE_CENTROIDS, centroid_for_state, normalize_state
+from .geo import STATE_CENTROIDS, LGA_CENTROIDS, centroid_for_state, centroid_for_lga, normalize_state
 
 __all__ = [
     "EventType",
@@ -39,6 +39,8 @@ __all__ = [
     "ExtractionResult",
     "BronzePayload",
     "STATE_CENTROIDS",
+    "LGA_CENTROIDS",
     "centroid_for_state",
+    "centroid_for_lga",
     "normalize_state",
 ]

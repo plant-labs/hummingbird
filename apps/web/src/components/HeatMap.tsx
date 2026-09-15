@@ -6,36 +6,66 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { GeoBubble } from "@/lib/types";
 import { bubbleColor } from "@/lib/labels";
 
+type FocusPoint = { lat: number; lng: number; key: string };
+
 type Props = {
   bubbles: GeoBubble[];
   selectedGeoId?: string | null;
+  focusPoint?: FocusPoint | null;
   onSelect: (bubble: GeoBubble) => void;
 };
+
+/** Spread bubbles that share the same pin so stacked LGAs stay clickable. */
+function withDisplayOffsets(bubbles: GeoBubble[]): GeoBubble[] {
+  const groups = new Map<string, GeoBubble[]>();
+  for (const b of bubbles) {
+    if (!Number.isFinite(Number(b.lat)) || !Number.isFinite(Number(b.lng))) continue;
+    const key = `${Number(b.lat).toFixed(4)}|${Number(b.lng).toFixed(4)}`;
+    const list = groups.get(key) || [];
+    list.push(b);
+    groups.set(key, list);
+  }
+  const out: GeoBubble[] = [];
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      out.push(group[0]);
+      continue;
+    }
+    const radiusDeg = 0.12;
+    group.forEach((b, i) => {
+      const angle = (2 * Math.PI * i) / group.length - Math.PI / 2;
+      out.push({
+        ...b,
+        lat: Number(b.lat) + radiusDeg * Math.cos(angle),
+        lng: Number(b.lng) + radiusDeg * Math.sin(angle),
+      });
+    });
+  }
+  return out;
+}
 
 function toGeoJSON(bubbles: GeoBubble[]): GeoJSON.FeatureCollection {
   return {
     type: "FeatureCollection",
-    features: bubbles
-      .filter((b) => Number.isFinite(Number(b.lat)) && Number.isFinite(Number(b.lng)))
-      .map((b) => ({
-        type: "Feature",
-        properties: {
-          geo_id: b.geo_id,
-          name: b.name,
-          count: b.count,
-          intensity: b.intensity,
-          color: bubbleColor(b.dominant_outcome),
-          radius: Math.min(48, 14 + Math.log(b.count + 1) * 12),
-        },
-        geometry: {
-          type: "Point",
-          coordinates: [Number(b.lng), Number(b.lat)],
-        },
-      })),
+    features: withDisplayOffsets(bubbles).map((b) => ({
+      type: "Feature",
+      properties: {
+        geo_id: b.geo_id,
+        name: b.name,
+        count: b.count,
+        intensity: b.intensity,
+        color: bubbleColor(b.dominant_outcome),
+        radius: Math.min(48, 14 + Math.log(b.count + 1) * 12),
+      },
+      geometry: {
+        type: "Point",
+        coordinates: [Number(b.lng), Number(b.lat)],
+      },
+    })),
   };
 }
 
-export default function HeatMap({ bubbles, selectedGeoId, onSelect }: Props) {
+export default function HeatMap({ bubbles, selectedGeoId, focusPoint, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const bubblesRef = useRef(bubbles);
@@ -179,6 +209,16 @@ export default function HeatMap({ bubbles, selectedGeoId, onSelect }: Props) {
       duration: 700,
     });
   }, [selectedGeoId, bubbles]);
+
+  useEffect(() => {
+    if (!focusPoint || !mapRef.current) return;
+    if (!Number.isFinite(focusPoint.lat) || !Number.isFinite(focusPoint.lng)) return;
+    mapRef.current.easeTo({
+      center: [focusPoint.lng, focusPoint.lat],
+      zoom: Math.max(mapRef.current.getZoom(), 6.5),
+      duration: 700,
+    });
+  }, [focusPoint]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }

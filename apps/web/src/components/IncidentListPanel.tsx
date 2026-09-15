@@ -11,6 +11,8 @@ type Props = {
   loading: boolean;
   onSelectIncident: (id: string) => void;
   onClose: () => void;
+  eyebrow?: string;
+  emptyMessage?: string;
 };
 
 export default function IncidentListPanel({
@@ -21,12 +23,14 @@ export default function IncidentListPanel({
   loading,
   onSelectIncident,
   onClose,
+  eyebrow = "Location",
+  emptyMessage = "No published incidents for this place.",
 }: Props) {
   return (
     <aside className="pointer-events-auto flex h-full w-full max-w-md flex-col border-l border-ink/10 bg-mist/95 shadow-[-16px_0_40px_rgba(20,32,27,0.12)] backdrop-blur-md">
       <header className="flex items-start justify-between gap-3 border-b border-ink/10 px-5 py-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-moss/70">Location</p>
+          <p className="text-xs uppercase tracking-[0.18em] text-moss/70">{eyebrow}</p>
           <h2 className="font-display text-2xl leading-tight text-ink">{placeName}</h2>
           <p className="mt-1 text-sm text-ink/70">
             {state} · {count} published incident{count === 1 ? "" : "s"}
@@ -45,7 +49,7 @@ export default function IncidentListPanel({
       <div className="flex-1 overflow-y-auto px-3 py-3">
         {loading && <p className="px-2 py-6 text-sm text-ink/60">Loading incidents…</p>}
         {!loading && incidents.length === 0 && (
-          <p className="px-2 py-6 text-sm text-ink/60">No published incidents for this place.</p>
+          <p className="px-2 py-6 text-sm text-ink/60">{emptyMessage}</p>
         )}
         <ul className="space-y-2">
           {incidents.map((inc) => {

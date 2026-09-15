@@ -126,6 +126,7 @@ KNOWN_OUTLETS = {
     "tvcnews.tv": "TVC News",
     "saharareporters.com": "Sahara Reporters",
     "arise.tv": "Arise TV",
+    "trtworld.com": "TRT World",
 }
 
 SECURITY_KEYWORDS = re.compile(

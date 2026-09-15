@@ -1,4 +1,4 @@
-"""Nigeria state approximate centroids (WGS84) for geocoding fallbacks."""
+"""Nigeria state / LGA approximate centroids (WGS84) for geocoding fallbacks."""
 
 STATE_CENTROIDS: dict[str, tuple[float, float]] = {
     "Abia": (5.4527, 7.5248),
@@ -44,6 +44,25 @@ STATE_CENTROIDS: dict[str, tuple[float, float]] = {
 }
 
 
+# Approximate LGA seats / town centers. Keys: "State|LGA" (case-insensitive lookup).
+LGA_CENTROIDS: dict[str, tuple[float, float]] = {
+    "Adamawa|Yola South": (9.2035, 12.4815),
+    "Bayelsa|Kaiama": (5.1200, 6.3000),
+    "Delta|Udu": (5.4600, 5.8700),
+    "Kano|Garun Mallam": (11.6700, 8.3700),
+    "Katsina|Faskari": (11.7200, 7.0300),
+    "Kebbi|Zuru": (11.4350, 5.2350),
+    "Niger|Borgu": (9.8830, 4.5080),
+    "Plateau|Barkin Ladi": (9.5350, 8.9000),
+    "Zamfara|Anka": (12.1080, 5.9330),
+    "Zamfara|Kaura Namoda": (12.5900, 6.5800),
+    "Zamfara|Anka and Kaura Namoda": (12.3500, 6.2500),
+    "Zamfara|Maru": (12.3330, 6.4000),
+    "Zamfara|Talata Mafara": (12.5687, 6.0622),
+    "Zamfara|Bakura": (12.2300, 5.8900),
+}
+
+
 def normalize_state(name: str) -> str:
     key = name.strip()
     for s in STATE_CENTROIDS:
@@ -55,3 +74,13 @@ def normalize_state(name: str) -> str:
 def centroid_for_state(state: str) -> tuple[float, float] | None:
     normalized = normalize_state(state)
     return STATE_CENTROIDS.get(normalized) or STATE_CENTROIDS.get(state)
+
+
+def centroid_for_lga(state: str, lga: str | None) -> tuple[float, float] | None:
+    """Prefer LGA seat when known; otherwise fall back to state centroid."""
+    if lga and lga.strip():
+        key = f"{normalize_state(state)}|{lga.strip()}".lower()
+        for stored, coords in LGA_CENTROIDS.items():
+            if stored.lower() == key:
+                return coords
+    return centroid_for_state(state)

@@ -29,6 +29,15 @@ export function fetchIncident(id: string): Promise<IncidentDetail> {
   return getJson(`/api/incidents/${id}`);
 }
 
+export function searchIncidents(q: string, limit = 20): Promise<IncidentSummary[]> {
+  const params = new URLSearchParams({
+    q,
+    limit: String(limit),
+    min_status: "reported",
+  });
+  return getJson(`/api/incidents/search?${params.toString()}`);
+}
+
 export function fetchReviewQueue(): Promise<ReviewItem[]> {
   const token = process.env.NEXT_PUBLIC_MODERATOR_TOKEN || "dev-moderator-token";
   return getJson(`/api/review?status=pending`, {

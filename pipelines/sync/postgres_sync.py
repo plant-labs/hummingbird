@@ -13,7 +13,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
-from hummingbird_schemas.geo import centroid_for_state
+from hummingbird_schemas.geo import centroid_for_lga
 from db_url import normalize_database_url
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -56,29 +56,103 @@ def enqueue_candidates(gold_path: Path) -> int:
     return count
 
 
-def _already_published(cur, preview: dict[str, Any]) -> bool:
-    """Skip duplicates: same state + headline within 3 days."""
-    headline = (preview.get("headline") or "").strip()
-    state = (preview.get("state") or "").strip()
-    if not headline or not state:
-        return False
+def _candidate_urls(candidate_wrap: dict[str, Any]) -> list[str]:
+    candidate = candidate_wrap.get("candidate") or candidate_wrap
+    primary = candidate.get("primary") or {}
+    members = candidate.get("members") or [primary]
+    urls: list[str] = []
+    for m in members:
+        bronze = m.get("bronze") or {}
+        url = (bronze.get("url") or "").strip()
+        if url and "example.com" not in url:
+            urls.append(url)
+    return urls
+
+
+def _find_published_by_urls(cur, urls: list[str]) -> Optional[UUID]:
+    """Return an existing published incident that already links any of these source URLs."""
+    if not urls:
+        return None
     cur.execute(
         """
-        SELECT 1 FROM incidents
-        WHERE state = %s
-          AND headline = %s
-          AND published_at IS NOT NULL
-          AND date_reported >= CURRENT_DATE - INTERVAL '3 days'
+        SELECT i.incident_id
+        FROM incidents i
+        JOIN incident_sources isrc ON isrc.incident_id = i.incident_id
+        JOIN sources s ON s.source_id = isrc.source_id
+        WHERE i.published_at IS NOT NULL
+          AND s.url = ANY(%s)
+        ORDER BY i.published_at ASC
+        LIMIT 1
+        """,
+        (urls,),
+    )
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+def _find_published_by_headline(cur, state: str, headline: str) -> Optional[UUID]:
+    """Exact state + headline match among published incidents (any date)."""
+    state = (state or "").strip()
+    headline = (headline or "").strip()
+    if not state or not headline:
+        return None
+    cur.execute(
+        """
+        SELECT incident_id FROM incidents
+        WHERE published_at IS NOT NULL
+          AND state = %s
+          AND btrim(headline) = %s
+        ORDER BY published_at ASC
         LIMIT 1
         """,
         (state, headline),
     )
-    return cur.fetchone() is not None
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+def _already_published(cur, preview: dict[str, Any], candidate_wrap: dict[str, Any] | None = None) -> bool:
+    """Skip duplicates: shared source URL, or same state + headline."""
+    if candidate_wrap and _find_published_by_urls(cur, _candidate_urls(candidate_wrap)):
+        return True
+    headline = (preview.get("headline") or "").strip()
+    state = (preview.get("state") or "").strip()
+    return _find_published_by_headline(cur, state, headline) is not None
+
+
+def _attach_sources_to_incident(cur, incident_id: UUID, source_ids: list[UUID]) -> None:
+    for i, sid in enumerate(source_ids):
+        role = "primary" if i == 0 else "corroborating"
+        cur.execute(
+            """
+            INSERT INTO incident_sources (incident_id, source_id, role)
+            VALUES (%s, %s, %s)
+            ON CONFLICT DO NOTHING
+            """,
+            (str(incident_id), str(sid), role),
+        )
+    cur.execute(
+        """
+        UPDATE incidents
+        SET corroboration_count = (
+              SELECT COUNT(*) FROM incident_sources WHERE incident_id = %s
+            ),
+            updated_at = now()
+        WHERE incident_id = %s
+        """,
+        (str(incident_id), str(incident_id)),
+    )
 
 
 def process_gold_candidates(gold_path: Path) -> dict[str, int]:
     """Auto-publish strong candidates; enqueue the rest for human review."""
-    stats = {"auto_published": 0, "enqueued": 0, "skipped_duplicate": 0, "quarantined": 0}
+    stats = {
+        "auto_published": 0,
+        "enqueued": 0,
+        "skipped_duplicate": 0,
+        "merged_into_existing": 0,
+        "quarantined": 0,
+    }
     with psycopg.connect(db_conninfo()) as conn:
         with conn.cursor() as cur:
             with gold_path.open(encoding="utf-8") as f:
@@ -93,13 +167,13 @@ def process_gold_candidates(gold_path: Path) -> dict[str, int]:
                         stats["quarantined"] += 1
                         continue
 
-                    if _already_published(cur, preview):
+                    if _already_published(cur, preview, item):
                         stats["skipped_duplicate"] += 1
                         continue
 
                     if route == "auto_publish":
                         verification = item.get("verification_status") or "reported"
-                        incident_id = publish_incident_from_candidate(
+                        incident_id, created = publish_incident_from_candidate(
                             cur, item, verification_status=verification
                         )
                         cur.execute(
@@ -118,7 +192,10 @@ def process_gold_candidates(gold_path: Path) -> dict[str, int]:
                                 item.get("reason"),
                             ),
                         )
-                        stats["auto_published"] += 1
+                        if created:
+                            stats["auto_published"] += 1
+                        else:
+                            stats["merged_into_existing"] += 1
                     else:
                         cur.execute(
                             """
@@ -135,7 +212,7 @@ def process_gold_candidates(gold_path: Path) -> dict[str, int]:
                         )
                         stats["enqueued"] += 1
 
-            if stats["auto_published"]:
+            if stats["auto_published"] or stats["merged_into_existing"]:
                 cur.execute("SELECT refresh_geo_agg_cache()")
         conn.commit()
     print(f"[sync] {stats}")
@@ -175,7 +252,11 @@ def publish_incident_from_candidate(
     cur,
     candidate_wrap: dict[str, Any],
     verification_status: str = "verified",
-) -> UUID:
+) -> tuple[UUID, bool]:
+    """Publish a new incident, or attach sources to an existing duplicate.
+
+    Returns (incident_id, created) where created=False means merged into an existing row.
+    """
     candidate = candidate_wrap.get("candidate") or candidate_wrap
     primary = candidate.get("primary") or {}
     bronze = primary.get("bronze") or {}
@@ -187,9 +268,19 @@ def publish_incident_from_candidate(
         sid = _upsert_source(cur, m.get("bronze") or {})
         source_ids.append(sid)
 
+    urls = _candidate_urls(candidate_wrap)
+    headline = extraction.get("headline") or bronze.get("title") or ""
     state = extraction.get("state") or "Unknown"
+
+    existing = _find_published_by_urls(cur, urls) or _find_published_by_headline(
+        cur, state, headline
+    )
+    if existing:
+        _attach_sources_to_incident(cur, existing, source_ids)
+        return existing, False
+
     lga = extraction.get("lga")
-    lat_lng = centroid_for_state(state)
+    lat_lng = centroid_for_lga(state, lga)
     lat, lng = (lat_lng or (9.0, 8.0))
     if extraction.get("lat") is not None and extraction.get("lng") is not None:
         try:
@@ -226,29 +317,13 @@ def publish_incident_from_candidate(
             min(1.0, 0.4 + 0.2 * len(source_ids)),
             candidate.get("corroboration_count") or len(source_ids),
             extraction.get("current_status") or "ongoing",
-            extraction.get("headline") or bronze.get("title"),
+            headline,
         ),
     )
     incident_id = cur.fetchone()[0]
 
+    _attach_sources_to_incident(cur, incident_id, source_ids)
     primary_source = source_ids[0]
-    cur.execute(
-        """
-        INSERT INTO incident_sources (incident_id, source_id, role)
-        VALUES (%s, %s, 'primary')
-        ON CONFLICT DO NOTHING
-        """,
-        (str(incident_id), str(primary_source)),
-    )
-    for sid in source_ids[1:]:
-        cur.execute(
-            """
-            INSERT INTO incident_sources (incident_id, source_id, role)
-            VALUES (%s, %s, 'corroborating')
-            ON CONFLICT DO NOTHING
-            """,
-            (str(incident_id), str(sid)),
-        )
 
     for field in extraction.get("fields") or []:
         cur.execute(
@@ -279,7 +354,7 @@ def publish_incident_from_candidate(
             "Published from pipeline",
         ),
     )
-    return incident_id
+    return incident_id, True
 
 
 
@@ -297,7 +372,9 @@ def approve_queue_item(queue_id: str, reviewer: str = "moderator") -> Optional[s
             verification = payload.get("verification_status") or "verified"
             if verification == "unconfirmed":
                 verification = "verified"  # explicit human elevates after review
-            incident_id = publish_incident_from_candidate(cur, payload, verification_status=verification)
+            incident_id, _created = publish_incident_from_candidate(
+                cur, payload, verification_status=verification
+            )
             cur.execute(
                 """
                 UPDATE review_queue

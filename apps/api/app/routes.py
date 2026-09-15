@@ -265,6 +265,53 @@ def bubble_incidents(
     return fetch_all(sql, (statuses, state, lga, type_list, type_list))
 
 
+@router.get("/incidents/search")
+def search_incidents(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(20, ge=1, le=50),
+    min_status: str = "reported",
+    include_unconfirmed: bool = False,
+) -> list[dict[str, Any]]:
+    """Public text search over published incidents (headline, state, lga, event_type)."""
+    query = (q or "").strip()
+    if len(query) < 2:
+        raise HTTPException(400, "Query must be at least 2 characters")
+
+    statuses = ["reported", "verified", "official_confirmation"]
+    if include_unconfirmed or min_status == "unconfirmed":
+        statuses = STATUS_ORDER[:]
+
+    if not db_available():
+        return demo_store.search_incidents(
+            query,
+            limit=limit,
+            min_status=min_status,
+            include_unconfirmed=include_unconfirmed,
+        )
+
+    pattern = f"%{query}%"
+    return fetch_all(
+        """
+        SELECT incident_id, event_type, date_occurred, date_reported, state, lga,
+               ST_Y(geom::geometry) AS lat, ST_X(geom::geometry) AS lng,
+               verification_status, confidence_score, corroboration_count,
+               current_status, headline
+        FROM incidents
+        WHERE published_at IS NOT NULL
+          AND verification_status::text = ANY(%s)
+          AND (
+            headline ILIKE %s
+            OR state ILIKE %s
+            OR COALESCE(lga, '') ILIKE %s
+            OR event_type::text ILIKE %s
+          )
+        ORDER BY date_reported DESC NULLS LAST, published_at DESC NULLS LAST
+        LIMIT %s
+        """,
+        (statuses, pattern, pattern, pattern, pattern, limit),
+    )
+
+
 @router.get("/incidents/{incident_id}")
 def incident_detail(incident_id: str) -> dict[str, Any]:
     if not db_available():

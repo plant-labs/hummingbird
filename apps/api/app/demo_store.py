@@ -401,6 +401,46 @@ class DemoStore:
                     result.append(i)
         return result
 
+    def search_incidents(
+        self,
+        q: str,
+        limit: int = 20,
+        **kwargs: Any,
+    ) -> list[dict[str, Any]]:
+        needle = q.strip().lower()
+        rows = self.list_public_incidents(**kwargs)
+        matched: list[dict[str, Any]] = []
+        for i in rows:
+            hay = " ".join(
+                [
+                    str(i.get("headline") or ""),
+                    str(i.get("state") or ""),
+                    str(i.get("lga") or ""),
+                    str(i.get("event_type") or ""),
+                ]
+            ).lower()
+            if needle in hay:
+                matched.append(
+                    {
+                        "incident_id": i["incident_id"],
+                        "event_type": i["event_type"],
+                        "date_occurred": i.get("date_occurred"),
+                        "date_reported": i["date_reported"],
+                        "state": i["state"],
+                        "lga": i.get("lga"),
+                        "lat": i.get("lat"),
+                        "lng": i.get("lng"),
+                        "verification_status": i["verification_status"],
+                        "confidence_score": i["confidence_score"],
+                        "corroboration_count": i["corroboration_count"],
+                        "current_status": i["current_status"],
+                        "headline": i.get("headline"),
+                    }
+                )
+            if len(matched) >= limit:
+                break
+        return matched
+
     def get_incident(self, incident_id: str) -> dict[str, Any] | None:
         for i in self.incidents:
             if i["incident_id"] == incident_id:
