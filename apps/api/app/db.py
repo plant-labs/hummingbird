@@ -7,12 +7,16 @@ import psycopg
 from psycopg.rows import dict_row
 
 from .config import get_settings
+from .db_url import normalize_database_url
+
+
+def _database_url() -> str:
+    return normalize_database_url(get_settings().database_url)
 
 
 def try_connect() -> Optional[psycopg.Connection]:
-    settings = get_settings()
     try:
-        conn = psycopg.connect(settings.database_url, row_factory=dict_row)
+        conn = psycopg.connect(_database_url(), row_factory=dict_row)
         conn.execute("SELECT 1")
         return conn
     except Exception:
@@ -21,8 +25,7 @@ def try_connect() -> Optional[psycopg.Connection]:
 
 @contextmanager
 def get_conn() -> Iterator[psycopg.Connection]:
-    settings = get_settings()
-    conn = psycopg.connect(settings.database_url, row_factory=dict_row)
+    conn = psycopg.connect(_database_url(), row_factory=dict_row)
     try:
         yield conn
         conn.commit()

@@ -279,8 +279,14 @@ def publish_incident_from_candidate(
         _attach_sources_to_incident(cur, existing, source_ids)
         return existing, False
 
-    lga = extraction.get("lga")
-    lat_lng = centroid_for_lga(state, lga)
+    raw_lga = extraction.get("lga")
+    lga = raw_lga.strip() if isinstance(raw_lga, str) and raw_lga.strip() else "Unspecified"
+    location_precision = (
+        "state"
+        if lga == "Unspecified"
+        else (extraction.get("location_precision") or "lga")
+    )
+    lat_lng = centroid_for_lga(state, None if lga == "Unspecified" else lga)
     lat, lng = (lat_lng or (9.0, 8.0))
     if extraction.get("lat") is not None and extraction.get("lng") is not None:
         try:
@@ -312,7 +318,7 @@ def publish_incident_from_candidate(
             lga,
             lng,
             lat,
-            extraction.get("location_precision") or "state",
+            location_precision,
             verification_status,
             min(1.0, 0.4 + 0.2 * len(source_ids)),
             candidate.get("corroboration_count") or len(source_ids),

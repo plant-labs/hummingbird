@@ -14,11 +14,13 @@ import AppMenu from "./AppMenu";
 import HummingbirdMark from "./HummingbirdMark";
 import IncidentListPanel from "./IncidentListPanel";
 import IncidentDetailPanel from "./IncidentDetailPanel";
+import LoadingIndicator from "./LoadingIndicator";
 
 const HeatMap = dynamic(() => import("./HeatMap"), { ssr: false });
 
 export default function MapExplorer() {
   const [bubbles, setBubbles] = useState<GeoBubble[]>([]);
+  const [bubblesLoading, setBubblesLoading] = useState(true);
   const [selected, setSelected] = useState<GeoBubble | null>(null);
   const [incidents, setIncidents] = useState<IncidentSummary[]>([]);
   const [detail, setDetail] = useState<IncidentDetail | null>(null);
@@ -68,6 +70,8 @@ export default function MapExplorer() {
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load map data");
+    } finally {
+      setBubblesLoading(false);
     }
   }, []);
 
@@ -109,7 +113,7 @@ export default function MapExplorer() {
       try {
         const payload = JSON.parse(msg.data);
         if (payload.event === "connected") {
-          setLiveNote(payload.store === "demo" ? "Live · demo store" : "Live · postgres");
+          setLiveNote("Live");
         } else if (payload.event === "bubble_refresh" || payload.event === "incident_changes") {
           loadBubbles();
         } else if (payload.event === "heartbeat") {
@@ -272,9 +276,15 @@ export default function MapExplorer() {
                 <span className="h-2 w-2 animate-pulse rounded-full bg-signal" />
                 {liveNote}
               </span>
-              <span>{bubbles.reduce((n, b) => n + b.count, 0)} published</span>
-              {bubbles.length === 0 && !error && (
-                <span className="text-alert">No map bubbles yet — check API connection</span>
+              {bubblesLoading ? (
+                <LoadingIndicator size="sm" label="Loading map…" />
+              ) : (
+                <>
+                  <span>{bubbles.reduce((n, b) => n + b.count, 0)} published</span>
+                  {bubbles.length === 0 && !error && (
+                    <span>No published incidents yet</span>
+                  )}
+                </>
               )}
             </div>
             {error && <p className="mt-2 text-sm text-alert">{error}</p>}

@@ -2,6 +2,7 @@
 
 import type { IncidentDetail } from "@/lib/types";
 import { outcomeTone, statusLabel, verificationLabel, verificationTone } from "@/lib/labels";
+import LoadingIndicator from "./LoadingIndicator";
 
 type Props = {
   detail: IncidentDetail | null;
@@ -46,8 +47,12 @@ export default function IncidentDetailPanel({ detail, loading, onBack }: Props) 
               {detail.headline || "Incident"}
             </h2>
             <p className="mt-1 text-sm text-ink/70">
-              {[detail.lga, detail.state].filter(Boolean).join(", ")} · reported {detail.date_reported}
+              {[detail.lga, detail.state].filter(Boolean).join(", ")} · occurred{" "}
+              {detail.date_occurred ?? "unknown"} · reported {detail.date_reported}
             </p>
+            {detail.lga === "Unspecified" && (
+              <p className="mt-1 text-xs text-ink/55">LGA unspecified (state-level)</p>
+            )}
 
             <div className="mt-4">
               <p className="text-[10px] uppercase tracking-[0.16em] text-moss/70">Verification</p>
@@ -90,7 +95,11 @@ export default function IncidentDetailPanel({ detail, loading, onBack }: Props) 
       </header>
 
       <div className="flex-1 space-y-6 overflow-y-auto px-5 py-4">
-        {loading && <p className="text-sm text-ink/60">Loading detail…</p>}
+        {loading && !detail && (
+          <div className="flex justify-center py-10">
+            <LoadingIndicator label="Loading detail…" />
+          </div>
+        )}
         {detail && (
           <>
             <section>
@@ -121,7 +130,9 @@ export default function IncidentDetailPanel({ detail, loading, onBack }: Props) 
                       <p className="font-medium text-ink">{statusLabel(s.to_status)}</p>
                       <p className="text-xs text-ink/55">
                         {new Date(s.changed_at).toLocaleString()}
-                        {s.note ? ` — ${s.note}` : ""}
+                        {s.note && s.note.trim() !== "Published from pipeline"
+                          ? ` — ${s.note}`
+                          : ""}
                       </p>
                     </li>
                   ))}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import maplibregl, { Map, GeoJSONSource } from "maplibre-gl";
+import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { GeoBubble } from "@/lib/types";
 import { bubbleColor } from "@/lib/labels";
@@ -44,42 +44,118 @@ function withDisplayOffsets(bubbles: GeoBubble[]): GeoBubble[] {
   return out;
 }
 
-function toGeoJSON(bubbles: GeoBubble[]): GeoJSON.FeatureCollection {
-  return {
-    type: "FeatureCollection",
-    features: withDisplayOffsets(bubbles).map((b) => ({
-      type: "Feature",
-      properties: {
-        geo_id: b.geo_id,
-        name: b.name,
-        count: b.count,
-        intensity: b.intensity,
-        color: bubbleColor(b.dominant_outcome),
-        radius: Math.min(48, 14 + Math.log(b.count + 1) * 12),
-      },
-      geometry: {
-        type: "Point",
-        coordinates: [Number(b.lng), Number(b.lat)],
-      },
-    })),
-  };
+function bubbleSize(count: number): number {
+  return Math.min(48, 14 + Math.log((count || 1) + 1) * 12);
+}
+
+function makeMarkerEl(bubble: GeoBubble, selected: boolean): HTMLButtonElement {
+  const size = bubbleSize(Number(bubble.count) || 1);
+  const color = bubbleColor(bubble.dominant_outcome);
+  const el = document.createElement("button");
+  el.type = "button";
+  el.title = `${bubble.name} (${bubble.count})`;
+  el.setAttribute("aria-label", `Open incidents in ${bubble.name}`);
+  el.dataset.geoId = bubble.geo_id;
+  el.style.cssText = [
+    "border:0",
+    "padding:0",
+    "cursor:pointer",
+    "background:transparent",
+    "display:grid",
+    "place-items:center",
+  ].join(";");
+
+  const glow = document.createElement("span");
+  glow.style.cssText = [
+    `width:${size}px`,
+    `height:${size}px`,
+    "border-radius:999px",
+    `background:${color}`,
+    "opacity:0.35",
+    "filter:blur(2px)",
+    "grid-area:1/1",
+  ].join(";");
+
+  const core = document.createElement("span");
+  const coreSize = Math.max(10, size * 0.42);
+  core.style.cssText = [
+    `width:${coreSize}px`,
+    `height:${coreSize}px`,
+    "border-radius:999px",
+    `background:${color}`,
+    "opacity:0.95",
+    "grid-area:1/1",
+    `box-shadow:0 0 0 ${selected ? 3 : 2}px ${selected ? "#1b2a22" : "#f7f4ee"}`,
+  ].join(";");
+
+  el.append(glow, core);
+  return el;
 }
 
 export default function HeatMap({ bubbles, selectedGeoId, focusPoint, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<Map | null>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const markersRef = useRef<maplibregl.Marker[]>([]);
   const bubblesRef = useRef(bubbles);
   const onSelectRef = useRef(onSelect);
+  const selectedRef = useRef(selectedGeoId);
   bubblesRef.current = bubbles;
   onSelectRef.current = onSelect;
+  selectedRef.current = selectedGeoId;
 
-  const applyBubbles = (map: Map, data: GeoBubble[]) => {
-    const source = map.getSource("bubbles") as GeoJSONSource | undefined;
-    if (source) source.setData(toGeoJSON(data));
+  const syncMarkers = (map: maplibregl.Map, data: GeoBubble[]) => {
+    try {
+      let container: HTMLElement | null = null;
+      try {
+        container = map.getContainer();
+      } catch {
+        return;
+      }
+      if (!container || !document.contains(container)) return;
+
+      for (const marker of markersRef.current) marker.remove();
+      markersRef.current = [];
+
+      const placed = withDisplayOffsets(data);
+      for (const bubble of placed) {
+        const el = makeMarkerEl(bubble, selectedRef.current === bubble.geo_id);
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          window.dispatchEvent(
+            new CustomEvent<string>("hummingbird:select-bubble", { detail: bubble.geo_id }),
+          );
+        });
+        const marker = new maplibregl.Marker({ element: el, anchor: "center" })
+          .setLngLat([Number(bubble.lng), Number(bubble.lat)])
+          .addTo(map);
+        markersRef.current.push(marker);
+      }
+    } catch (err) {
+      console.error("[HeatMap] syncMarkers failed", err);
+    }
   };
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
+    if (!containerRef.current) return;
+
+    if (mapRef.current) {
+      let alive = false;
+      try {
+        const c = mapRef.current.getContainer();
+        alive = Boolean(c && document.contains(c));
+      } catch {
+        alive = false;
+      }
+      if (!alive) {
+        try {
+          mapRef.current.remove();
+        } catch {
+          /* ignore */
+        }
+        mapRef.current = null;
+      }
+    }
+    if (mapRef.current) return;
 
     const map = new maplibregl.Map({
       container: containerRef.current,
@@ -93,13 +169,7 @@ export default function HeatMap({ bubbles, selectedGeoId, focusPoint, onSelect }
             attribution: "© OpenStreetMap",
           },
         },
-        layers: [
-          {
-            id: "osm",
-            type: "raster",
-            source: "osm",
-          },
-        ],
+        layers: [{ id: "osm", type: "raster", source: "osm" }],
       },
       center: [8.1, 9.6],
       zoom: 5.2,
@@ -107,67 +177,19 @@ export default function HeatMap({ bubbles, selectedGeoId, focusPoint, onSelect }
     });
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+    mapRef.current = map;
 
-    map.on("load", () => {
-      map.addSource("bubbles", {
-        type: "geojson",
-        data: toGeoJSON(bubblesRef.current),
-      });
-
-      map.addLayer({
-        id: "bubbles-heat",
-        type: "circle",
-        source: "bubbles",
-        paint: {
-          "circle-radius": ["get", "radius"],
-          "circle-color": ["get", "color"],
-          "circle-opacity": 0.38,
-          "circle-blur": 0.55,
-        },
-      });
-
-      map.addLayer({
-        id: "bubbles-core",
-        type: "circle",
-        source: "bubbles",
-        paint: {
-          "circle-radius": ["*", ["get", "radius"], 0.42],
-          "circle-color": ["get", "color"],
-          "circle-opacity": 0.92,
-          "circle-stroke-width": 2,
-          "circle-stroke-color": "#f7f4ee",
-        },
-      });
-
-      map.on("mouseenter", "bubbles-core", () => {
-        map.getCanvas().style.cursor = "pointer";
-      });
-      map.on("mouseleave", "bubbles-core", () => {
-        map.getCanvas().style.cursor = "";
-      });
-
-      map.on("click", "bubbles-core", (e) => {
-        const feature = e.features?.[0];
-        if (!feature) return;
-        const geoId = feature.properties?.geo_id as string;
-        window.dispatchEvent(
-          new CustomEvent<string>("hummingbird:select-bubble", { detail: geoId }),
-        );
-      });
-
-      map.on("click", (e) => {
-        const hits = map.queryRenderedFeatures(e.point, { layers: ["bubbles-core"] });
-        if (hits.length > 0) return;
-        window.dispatchEvent(new CustomEvent("hummingbird:dismiss-panel"));
-      });
-
-      applyBubbles(map, bubblesRef.current);
+    syncMarkers(map, bubblesRef.current);
+    map.on("load", () => syncMarkers(map, bubblesRef.current));
+    map.on("click", () => {
+      window.dispatchEvent(new CustomEvent("hummingbird:dismiss-panel"));
     });
 
-    mapRef.current = map;
     return () => {
+      for (const marker of markersRef.current) marker.remove();
+      markersRef.current = [];
       map.remove();
-      mapRef.current = null;
+      if (mapRef.current === map) mapRef.current = null;
     };
   }, []);
 
@@ -182,20 +204,27 @@ export default function HeatMap({ bubbles, selectedGeoId, focusPoint, onSelect }
   }, []);
 
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    if (map.getSource("bubbles")) {
-      applyBubbles(map, bubbles);
-      return;
-    }
-
-    const onLoad = () => applyBubbles(map, bubblesRef.current);
-    map.once("load", onLoad);
-    return () => {
-      map.off("load", onLoad);
+    let cancelled = false;
+    const trySync = () => {
+      if (cancelled) return;
+      const map = mapRef.current;
+      if (!map) return;
+      syncMarkers(map, bubblesRef.current);
     };
-  }, [bubbles]);
+
+    trySync();
+    const map = mapRef.current;
+    if (map && !map.loaded()) map.once("load", trySync);
+    const t0 = window.setTimeout(trySync, 0);
+    const t1 = window.setTimeout(trySync, 300);
+
+    return () => {
+      cancelled = true;
+      mapRef.current?.off("load", trySync);
+      window.clearTimeout(t0);
+      window.clearTimeout(t1);
+    };
+  }, [bubbles, selectedGeoId]);
 
   useEffect(() => {
     if (!selectedGeoId || !mapRef.current) return;
@@ -220,5 +249,11 @@ export default function HeatMap({ bubbles, selectedGeoId, focusPoint, onSelect }
     });
   }, [focusPoint]);
 
-  return <div ref={containerRef} className="h-full w-full" />;
+  return (
+    <div
+      ref={containerRef}
+      className="h-full w-full"
+      data-bubble-count={bubbles.length}
+    />
+  );
 }

@@ -2,6 +2,7 @@
 
 import type { IncidentSummary } from "@/lib/types";
 import { outcomeTone, statusLabel, verificationLabel, verificationTone } from "@/lib/labels";
+import LoadingIndicator from "./LoadingIndicator";
 
 type Props = {
   placeName: string;
@@ -47,40 +48,46 @@ export default function IncidentListPanel({
       </header>
 
       <div className="flex-1 overflow-y-auto px-3 py-3">
-        {loading && <p className="px-2 py-6 text-sm text-ink/60">Loading incidents…</p>}
+        {loading && (
+          <div className="flex justify-center px-2 py-10">
+            <LoadingIndicator label="Loading incidents…" />
+          </div>
+        )}
         {!loading && incidents.length === 0 && (
           <p className="px-2 py-6 text-sm text-ink/60">{emptyMessage}</p>
         )}
-        <ul className="space-y-2">
-          {incidents.map((inc) => {
-            const vTone = verificationTone(inc.verification_status);
-            const oTone = outcomeTone(inc.current_status);
-            return (
-              <li key={inc.incident_id}>
-                <button
-                  type="button"
-                  onClick={() => onSelectIncident(inc.incident_id)}
-                  className="w-full border border-ink/10 bg-white/70 px-4 py-3 text-left transition hover:border-fern/40 hover:bg-white"
-                >
-                  <div className="flex items-center justify-between gap-2 text-[11px] uppercase tracking-wide text-ink/55">
-                    <span>{inc.event_type}</span>
-                    <span>{inc.date_reported}</span>
-                  </div>
-                  <p className="mt-1 font-medium text-ink">{inc.headline || "Untitled incident"}</p>
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                    <span className={`${vTone.bg} ${vTone.text} px-2 py-0.5`}>
-                      {verificationLabel(inc.verification_status)}
-                      {inc.corroboration_count > 0 ? ` · ${inc.corroboration_count} sources` : ""}
-                    </span>
-                    <span className={`${oTone.bg} ${oTone.text} px-2 py-0.5`}>
-                      {statusLabel(inc.current_status)}
-                    </span>
-                  </div>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+        {!loading && (
+          <ul className="space-y-2">
+            {incidents.map((inc) => {
+              const vTone = verificationTone(inc.verification_status);
+              const oTone = outcomeTone(inc.current_status);
+              return (
+                <li key={inc.incident_id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelectIncident(inc.incident_id)}
+                    className="w-full border border-ink/10 bg-white/70 px-4 py-3 text-left transition hover:border-fern/40 hover:bg-white"
+                  >
+                    <div className="flex items-center justify-between gap-2 text-[11px] uppercase tracking-wide text-ink/55">
+                      <span>{inc.event_type}</span>
+                      <span>{inc.date_reported}</span>
+                    </div>
+                    <p className="mt-1 font-medium text-ink">{inc.headline || "Untitled incident"}</p>
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                      <span className={`${vTone.bg} ${vTone.text} px-2 py-0.5`}>
+                        {verificationLabel(inc.verification_status)}
+                        {inc.corroboration_count > 0 ? ` · ${inc.corroboration_count} sources` : ""}
+                      </span>
+                      <span className={`${oTone.bg} ${oTone.text} px-2 py-0.5`}>
+                        {statusLabel(inc.current_status)}
+                      </span>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
     </aside>
   );

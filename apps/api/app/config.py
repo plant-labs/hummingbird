@@ -1,10 +1,26 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# apps/api/app/config.py -> repo root
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _env_files() -> tuple[str, ...]:
+    candidates = (
+        _REPO_ROOT / ".env",
+        _REPO_ROOT / ".env.local",
+        Path(".env"),
+        Path(".env.local"),
+    )
+    found = tuple(str(p) for p in candidates if p.is_file())
+    return found if found else (".env",)
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # Later files override earlier ones; .env.local wins over .env.
+    model_config = SettingsConfigDict(env_file=_env_files(), extra="ignore")
 
     database_url: str = "postgresql://hummingbird:hummingbird@localhost:5432/hummingbird"
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"

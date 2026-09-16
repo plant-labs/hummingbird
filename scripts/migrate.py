@@ -17,6 +17,7 @@ MIGRATIONS = [
     ROOT / "infra" / "postgres" / "001_init.sql",
     ROOT / "infra" / "postgres" / "002_refresh_geo_agg.sql",
     ROOT / "infra" / "postgres" / "004_geo_outcome.sql",
+    ROOT / "infra" / "postgres" / "005_lga_fallback.sql",
 ]
 
 
