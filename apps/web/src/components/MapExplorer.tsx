@@ -141,16 +141,10 @@ export default function MapExplorer() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setFilterOpen(false);
     };
-    const onPointer = (e: MouseEvent) => {
-      if (filterWrapRef.current?.contains(e.target as Node)) return;
-      setFilterOpen(false);
-    };
+    // Do not close on outside mousedown — the native date picker popup lives
+    // outside this DOM tree, and closing early cancels the date selection.
     document.addEventListener("keydown", onKey);
-    document.addEventListener("mousedown", onPointer);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.removeEventListener("mousedown", onPointer);
-    };
+    return () => document.removeEventListener("keydown", onKey);
   }, [filterOpen]);
 
   useEffect(() => {
@@ -364,18 +358,29 @@ export default function MapExplorer() {
                   <p className="mt-2 text-[11px] leading-snug text-ink/45">
                     Uses occurrence date; falls back to reported if unknown.
                   </p>
-                  {dateFilterActive && (
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    {dateFilterActive ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDateFrom("");
+                          setDateTo("");
+                        }}
+                        className="text-xs text-fern underline-offset-2 hover:underline"
+                      >
+                        Clear dates
+                      </button>
+                    ) : (
+                      <span />
+                    )}
                     <button
                       type="button"
-                      onClick={() => {
-                        setDateFrom("");
-                        setDateTo("");
-                      }}
-                      className="mt-2 text-xs text-fern underline-offset-2 hover:underline"
+                      onClick={() => setFilterOpen(false)}
+                      className="border border-ink/15 bg-white/70 px-2.5 py-1 text-xs text-ink transition hover:border-fern/40"
                     >
-                      Clear dates
+                      Done
                     </button>
-                  )}
+                  </div>
                 </div>
               )}
             </div>
