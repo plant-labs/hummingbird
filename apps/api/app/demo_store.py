@@ -314,6 +314,8 @@ class DemoStore:
         min_status: str = "reported",
         types: list[str] | None = None,
         include_unconfirmed: bool = False,
+        date_from: str | None = None,
+        date_to: str | None = None,
     ) -> list[dict[str, Any]]:
         allowed = set(PUBLIC_STATUSES)
         if include_unconfirmed or min_status == "unconfirmed":
@@ -327,6 +329,18 @@ class DemoStore:
         rows = [i for i in self.incidents if i["verification_status"] in allowed and i.get("published_at")]
         if types:
             rows = [i for i in rows if i["event_type"] in types]
+        if date_from or date_to:
+            filtered: list[dict[str, Any]] = []
+            for i in rows:
+                effective = i.get("date_occurred") or i.get("date_reported")
+                if not effective:
+                    continue
+                if date_from and str(effective) < date_from:
+                    continue
+                if date_to and str(effective) > date_to:
+                    continue
+                filtered.append(i)
+            rows = filtered
         return rows
 
     def bubbles(self, level: str = "lga", **kwargs: Any) -> list[dict[str, Any]]:

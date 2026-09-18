@@ -8,6 +8,7 @@ import {
   fetchIncident,
   searchIncidents,
   API_BASE,
+  type DateRangeFilter,
 } from "@/lib/api";
 import type { GeoBubble, IncidentDetail, IncidentSummary } from "@/lib/types";
 import AppMenu from "./AppMenu";
@@ -17,6 +18,9 @@ import IncidentDetailPanel from "./IncidentDetailPanel";
 import LoadingIndicator from "./LoadingIndicator";
 
 const HeatMap = dynamic(() => import("./HeatMap"), { ssr: false });
+
+const dateInputClass =
+  "border border-ink/15 bg-mist/95 px-2 py-1.5 text-xs text-ink outline-none backdrop-blur focus:border-fern";
 
 export default function MapExplorer() {
   const [bubbles, setBubbles] = useState<GeoBubble[]>([]);
@@ -32,11 +36,21 @@ export default function MapExplorer() {
   const [searchActive, setSearchActive] = useState(false);
   const [searchLabel, setSearchLabel] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
   const [focusPoint, setFocusPoint] = useState<{ lat: number; lng: number; key: string } | null>(
     null,
   );
   const searchWrapRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const filterWrapRef = useRef<HTMLDivElement>(null);
+
+  const dateRange: DateRangeFilter = {
+    dateFrom: dateFrom || null,
+    dateTo: dateTo || null,
+  };
+  const dateFilterActive = Boolean(dateFrom || dateTo);
 
   const collapseSearch = useCallback(() => {
     setSearchOpen(false);
@@ -64,8 +78,12 @@ export default function MapExplorer() {
   }, []);
 
   const loadBubbles = useCallback(async () => {
+    setBubblesLoading(true);
     try {
-      const data = await fetchBubbles("lga");
+      const data = await fetchBubbles("lga", {
+        dateFrom: dateFrom || null,
+        dateTo: dateTo || null,
+      });
       setBubbles(data);
       setError(null);
     } catch (e) {
@@ -73,11 +91,23 @@ export default function MapExplorer() {
     } finally {
       setBubblesLoading(false);
     }
-  }, []);
+  }, [dateFrom, dateTo]);
 
   useEffect(() => {
     loadBubbles();
   }, [loadBubbles]);
+
+  useEffect(() => {
+    // Date range change invalidates open list/detail (counts no longer match).
+    setSelected(null);
+    setDetail(null);
+    setIncidents([]);
+    setSearchActive(false);
+    setSearchLabel("");
+    setSearchQuery("");
+    setSearchOpen(false);
+    setFocusPoint(null);
+  }, [dateFrom, dateTo]);
 
   useEffect(() => {
     window.addEventListener("hummingbird:dismiss-panel", clearPanels);
@@ -92,7 +122,6 @@ export default function MapExplorer() {
     };
     const onPointer = (e: MouseEvent) => {
       if (searchWrapRef.current?.contains(e.target as Node)) return;
-      // Keep results panel usable — only fold the input back to an icon.
       if (searchActive) {
         setSearchOpen(false);
         return;
@@ -106,6 +135,23 @@ export default function MapExplorer() {
       document.removeEventListener("mousedown", onPointer);
     };
   }, [searchOpen, searchActive, collapseSearch]);
+
+  useEffect(() => {
+    if (!filterOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFilterOpen(false);
+    };
+    const onPointer = (e: MouseEvent) => {
+      if (filterWrapRef.current?.contains(e.target as Node)) return;
+      setFilterOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onPointer);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onPointer);
+    };
+  }, [filterOpen]);
 
   useEffect(() => {
     const es = new EventSource(`${API_BASE}/api/stream`);
@@ -146,7 +192,10 @@ export default function MapExplorer() {
       setSearchLabel(q);
       setListLoading(true);
       try {
-        const rows = await searchIncidents(q);
+        const rows = await searchIncidents(q, 20, {
+          dateFrom: dateFrom || null,
+          dateTo: dateTo || null,
+        });
         setIncidents(rows);
         setError(null);
       } catch (e) {
@@ -157,7 +206,7 @@ export default function MapExplorer() {
     }, 250);
 
     return () => window.clearTimeout(handle);
-  }, [searchQuery]);
+  }, [searchQuery, dateFrom, dateTo]);
 
   const onSelectBubble = async (bubble: GeoBubble) => {
     setSearchActive(false);
@@ -169,7 +218,7 @@ export default function MapExplorer() {
     setDetail(null);
     setListLoading(true);
     try {
-      const rows = await fetchBubbleIncidents(bubble.geo_id);
+      const rows = await fetchBubbleIncidents(bubble.geo_id, dateRange);
       setIncidents(rows);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load incidents");
@@ -237,6 +286,7 @@ export default function MapExplorer() {
                     stroke="currentColor"
                     strokeWidth="2"
                     strokeLinecap="round"
+                    strokeLinejoin="round"
                     aria-hidden
                   >
                     <circle cx="11" cy="11" r="7" />
@@ -255,6 +305,78 @@ export default function MapExplorer() {
                     className="w-full border border-ink/15 bg-mist/95 px-2.5 py-2.5 text-sm text-ink outline-none backdrop-blur placeholder:text-ink/40 focus:border-fern"
                   />
                 </label>
+              )}
+            </div>
+            <div ref={filterWrapRef} className="relative">
+              <button
+                type="button"
+                aria-label="Filter by date"
+                aria-expanded={filterOpen}
+                onClick={() => setFilterOpen((open) => !open)}
+                className={`relative flex h-11 w-11 items-center justify-center border bg-mist/95 text-ink shadow-sm backdrop-blur transition hover:border-fern/40 ${
+                  filterOpen || dateFilterActive ? "border-fern/50" : "border-ink/15"
+                }`}
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <path d="M4 5h16l-6 7v5l-4 2v-7L4 5z" />
+                </svg>
+                {dateFilterActive && (
+                  <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-fern" />
+                )}
+              </button>
+              {filterOpen && (
+                <div className="absolute left-0 top-full z-30 mt-2 w-56 border border-ink/10 bg-mist/95 p-3 shadow-lg backdrop-blur">
+                  <p className="text-[10px] uppercase tracking-[0.14em] text-moss/70">
+                    Occurrence period
+                  </p>
+                  <div className="mt-2 flex flex-col gap-2">
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[11px] text-ink/55">From</span>
+                      <input
+                        type="date"
+                        value={dateFrom}
+                        max={dateTo || undefined}
+                        onChange={(e) => setDateFrom(e.target.value)}
+                        className={dateInputClass}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[11px] text-ink/55">To</span>
+                      <input
+                        type="date"
+                        value={dateTo}
+                        min={dateFrom || undefined}
+                        onChange={(e) => setDateTo(e.target.value)}
+                        className={dateInputClass}
+                      />
+                    </label>
+                  </div>
+                  <p className="mt-2 text-[11px] leading-snug text-ink/45">
+                    Uses occurrence date; falls back to reported if unknown.
+                  </p>
+                  {dateFilterActive && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDateFrom("");
+                        setDateTo("");
+                      }}
+                      className="mt-2 text-xs text-fern underline-offset-2 hover:underline"
+                    >
+                      Clear dates
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -280,9 +402,16 @@ export default function MapExplorer() {
                 <LoadingIndicator size="sm" label="Loading map…" />
               ) : (
                 <>
-                  <span>{bubbles.reduce((n, b) => n + b.count, 0)} published</span>
+                  <span>
+                    {bubbles.reduce((n, b) => n + b.count, 0)} published
+                    {dateFilterActive ? " in range" : ""}
+                  </span>
                   {bubbles.length === 0 && !error && (
-                    <span>No published incidents yet</span>
+                    <span>
+                      {dateFilterActive
+                        ? "No incidents in this date range"
+                        : "No published incidents yet"}
+                    </span>
                   )}
                 </>
               )}

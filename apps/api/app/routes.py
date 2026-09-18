@@ -104,43 +104,62 @@ def health() -> dict[str, Any]:
     return {"ok": True, "store": "postgres" if db_available() else "demo"}
 
 
+def _parse_date_bounds(
+    date_from: str | None,
+    date_to: str | None,
+) -> tuple[str | None, str | None]:
+    """Inclusive occurrence window; uses YYYY-MM-DD. Empty → no bound."""
+    d_from = _parse_optional_date(date_from, "date_from")
+    d_to = _parse_optional_date(date_to, "date_to")
+    if d_from and d_to and d_from > d_to:
+        raise HTTPException(400, "date_from must be on or before date_to")
+    return d_from, d_to
+
+
+# Effective map date: occurred when known, otherwise reported.
+_EFFECTIVE_DATE = "COALESCE(i.date_occurred, i.date_reported)"
+
+
 @router.get("/map/bubbles")
 def map_bubbles(
     level: str = Query("lga", pattern="^(lga|state)$"),
     types: str | None = None,
     min_status: str = "reported",
     include_unconfirmed: bool = False,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ) -> list[dict[str, Any]]:
     type_list = _parse_types(types)
+    d_from, d_to = _parse_date_bounds(date_from, date_to)
     if not db_available():
         return demo_store.bubbles(
             level=level,
             types=type_list,
             min_status=min_status,
             include_unconfirmed=include_unconfirmed,
+            date_from=d_from,
+            date_to=d_to,
         )
 
     statuses = ["reported", "verified", "official_confirmation"]
     if include_unconfirmed or min_status == "unconfirmed":
         statuses = STATUS_ORDER[:]
 
-    # Prefer cache; fall back to live aggregation
-    cached = fetch_all(
-        """
-        SELECT geo_id, level, name, state, lga, lat, lng, count, intensity,
-               by_type, dominant_verification, dominant_outcome
-        FROM geo_agg_cache
-        WHERE level = %s OR (%s = 'state' AND level = 'state')
-        ORDER BY count DESC
-        """,
-        (level, level),
-    )
-    if cached and level == "lga":
-        rows = [r for r in cached if r["level"] == "lga"]
-        if type_list:
-            # filter by recomputing from incidents when type filter present
-            pass
-        else:
+    # Cache has no date dimension — use it only for the unfiltered map.
+    use_cache = not type_list and not d_from and not d_to
+    if use_cache:
+        cached = fetch_all(
+            """
+            SELECT geo_id, level, name, state, lga, lat, lng, count, intensity,
+                   by_type, dominant_verification, dominant_outcome
+            FROM geo_agg_cache
+            WHERE level = %s OR (%s = 'state' AND level = 'state')
+            ORDER BY count DESC
+            """,
+            (level, level),
+        )
+        if cached and level == "lga":
+            rows = [r for r in cached if r["level"] == "lga"]
             return [
                 {
                     **r,
@@ -150,21 +169,20 @@ def map_bubbles(
                 }
                 for r in rows
             ]
-    if cached and level == "state":
-        # Aggregate LGA cache up to state if needed
-        state_rows = [r for r in cached if r["level"] == "state"]
-        if state_rows:
-            return [
-                {
-                    **r,
-                    "by_type": r["by_type"] or {},
-                    "dominant_verification": r["dominant_verification"],
-                    "dominant_outcome": r.get("dominant_outcome") or "captive",
-                }
-                for r in state_rows
-            ]
+        if cached and level == "state":
+            state_rows = [r for r in cached if r["level"] == "state"]
+            if state_rows:
+                return [
+                    {
+                        **r,
+                        "by_type": r["by_type"] or {},
+                        "dominant_verification": r["dominant_verification"],
+                        "dominant_outcome": r.get("dominant_outcome") or "captive",
+                    }
+                    for r in state_rows
+                ]
 
-    sql = """
+    sql = f"""
       SELECT
         CASE WHEN %s = 'state' OR i.lga IS NULL OR btrim(i.lga) = ''
           THEN 'state:' || lower(i.state)
@@ -179,19 +197,46 @@ def map_bubbles(
         AVG(ST_Y(i.geom::geometry)) AS lat,
         AVG(ST_X(i.geom::geometry)) AS lng,
         COUNT(*)::INT AS count,
-        LN(COUNT(*) + 1)::REAL AS intensity
+        LN(COUNT(*) + 1)::REAL AS intensity,
+        CASE
+          WHEN BOOL_OR(i.current_status::text NOT IN ('released', 'rescued'))
+          THEN 'captive' ELSE 'resolved'
+        END AS dominant_outcome
       FROM incidents i
       WHERE i.published_at IS NOT NULL
         AND i.verification_status::text = ANY(%s)
         AND i.geom IS NOT NULL
         AND (%s::text[] IS NULL OR i.event_type::text = ANY(%s))
+        AND (%s::date IS NULL OR {_EFFECTIVE_DATE} >= %s::date)
+        AND (%s::date IS NULL OR {_EFFECTIVE_DATE} <= %s::date)
       GROUP BY 1, 2, 3, 4, 5
       ORDER BY count DESC
     """
-    return fetch_all(
+    rows = fetch_all(
         sql,
-        (level, level, level, level, statuses, type_list, type_list),
+        (
+            level,
+            level,
+            level,
+            level,
+            statuses,
+            type_list,
+            type_list,
+            d_from,
+            d_from,
+            d_to,
+            d_to,
+        ),
     )
+    return [
+        {
+            **r,
+            "by_type": r.get("by_type") or {},
+            "dominant_verification": r.get("dominant_verification"),
+            "dominant_outcome": r.get("dominant_outcome") or "captive",
+        }
+        for r in rows
+    ]
 
 
 @router.get("/map/bubbles/{geo_id}/incidents")
@@ -200,14 +245,19 @@ def bubble_incidents(
     types: str | None = None,
     min_status: str = "reported",
     include_unconfirmed: bool = False,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ) -> list[dict[str, Any]]:
     type_list = _parse_types(types)
+    d_from, d_to = _parse_date_bounds(date_from, date_to)
     if not db_available():
         rows = demo_store.incidents_for_geo(
             geo_id,
             types=type_list,
             min_status=min_status,
             include_unconfirmed=include_unconfirmed,
+            date_from=d_from,
+            date_to=d_to,
         )
         return [
             {
@@ -232,37 +282,50 @@ def bubble_incidents(
     if include_unconfirmed or min_status == "unconfirmed":
         statuses = STATUS_ORDER[:]
 
+    date_clause = f"""
+        AND (%s::date IS NULL OR {_EFFECTIVE_DATE} >= %s::date)
+        AND (%s::date IS NULL OR {_EFFECTIVE_DATE} <= %s::date)
+    """
+
     if geo_id.startswith("state:"):
         state = geo_id.split(":", 1)[1]
-        sql = """
-          SELECT incident_id, event_type, date_occurred, date_reported, state, lga,
-                 ST_Y(geom::geometry) AS lat, ST_X(geom::geometry) AS lng,
-                 verification_status, confidence_score, corroboration_count,
-                 current_status, headline
-          FROM incidents
-          WHERE published_at IS NOT NULL
-            AND verification_status::text = ANY(%s)
-            AND lower(state) = %s
-            AND (%s::text[] IS NULL OR event_type::text = ANY(%s))
-          ORDER BY date_reported DESC
+        sql = f"""
+          SELECT i.incident_id, i.event_type, i.date_occurred, i.date_reported, i.state, i.lga,
+                 ST_Y(i.geom::geometry) AS lat, ST_X(i.geom::geometry) AS lng,
+                 i.verification_status, i.confidence_score, i.corroboration_count,
+                 i.current_status, i.headline
+          FROM incidents i
+          WHERE i.published_at IS NOT NULL
+            AND i.verification_status::text = ANY(%s)
+            AND lower(i.state) = %s
+            AND (%s::text[] IS NULL OR i.event_type::text = ANY(%s))
+            {date_clause}
+          ORDER BY COALESCE(i.date_occurred, i.date_reported) DESC NULLS LAST
         """
-        return fetch_all(sql, (statuses, state, type_list, type_list))
+        return fetch_all(
+            sql,
+            (statuses, state, type_list, type_list, d_from, d_from, d_to, d_to),
+        )
 
     state, lga = geo_id.split(":", 1)
-    sql = """
-      SELECT incident_id, event_type, date_occurred, date_reported, state, lga,
-             ST_Y(geom::geometry) AS lat, ST_X(geom::geometry) AS lng,
-             verification_status, confidence_score, corroboration_count,
-             current_status, headline
-      FROM incidents
-      WHERE published_at IS NOT NULL
-        AND verification_status::text = ANY(%s)
-        AND lower(state) = %s
-        AND lower(btrim(COALESCE(lga, ''))) = %s
-        AND (%s::text[] IS NULL OR event_type::text = ANY(%s))
-      ORDER BY date_reported DESC
+    sql = f"""
+      SELECT i.incident_id, i.event_type, i.date_occurred, i.date_reported, i.state, i.lga,
+             ST_Y(i.geom::geometry) AS lat, ST_X(i.geom::geometry) AS lng,
+             i.verification_status, i.confidence_score, i.corroboration_count,
+             i.current_status, i.headline
+      FROM incidents i
+      WHERE i.published_at IS NOT NULL
+        AND i.verification_status::text = ANY(%s)
+        AND lower(i.state) = %s
+        AND lower(btrim(COALESCE(i.lga, ''))) = %s
+        AND (%s::text[] IS NULL OR i.event_type::text = ANY(%s))
+        {date_clause}
+      ORDER BY COALESCE(i.date_occurred, i.date_reported) DESC NULLS LAST
     """
-    return fetch_all(sql, (statuses, state, lga, type_list, type_list))
+    return fetch_all(
+        sql,
+        (statuses, state, lga, type_list, type_list, d_from, d_from, d_to, d_to),
+    )
 
 
 @router.get("/incidents/search")
@@ -271,12 +334,15 @@ def search_incidents(
     limit: int = Query(20, ge=1, le=50),
     min_status: str = "reported",
     include_unconfirmed: bool = False,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ) -> list[dict[str, Any]]:
     """Public text search over published incidents (headline, state, lga, event_type)."""
     query = (q or "").strip()
     if len(query) < 2:
         raise HTTPException(400, "Query must be at least 2 characters")
 
+    d_from, d_to = _parse_date_bounds(date_from, date_to)
     statuses = ["reported", "verified", "official_confirmation"]
     if include_unconfirmed or min_status == "unconfirmed":
         statuses = STATUS_ORDER[:]
@@ -287,28 +353,33 @@ def search_incidents(
             limit=limit,
             min_status=min_status,
             include_unconfirmed=include_unconfirmed,
+            date_from=d_from,
+            date_to=d_to,
         )
 
     pattern = f"%{query}%"
     return fetch_all(
-        """
-        SELECT incident_id, event_type, date_occurred, date_reported, state, lga,
-               ST_Y(geom::geometry) AS lat, ST_X(geom::geometry) AS lng,
-               verification_status, confidence_score, corroboration_count,
-               current_status, headline
-        FROM incidents
-        WHERE published_at IS NOT NULL
-          AND verification_status::text = ANY(%s)
+        f"""
+        SELECT i.incident_id, i.event_type, i.date_occurred, i.date_reported, i.state, i.lga,
+               ST_Y(i.geom::geometry) AS lat, ST_X(i.geom::geometry) AS lng,
+               i.verification_status, i.confidence_score, i.corroboration_count,
+               i.current_status, i.headline
+        FROM incidents i
+        WHERE i.published_at IS NOT NULL
+          AND i.verification_status::text = ANY(%s)
           AND (
-            headline ILIKE %s
-            OR state ILIKE %s
-            OR COALESCE(lga, '') ILIKE %s
-            OR event_type::text ILIKE %s
+            i.headline ILIKE %s
+            OR i.state ILIKE %s
+            OR COALESCE(i.lga, '') ILIKE %s
+            OR i.event_type::text ILIKE %s
           )
-        ORDER BY date_reported DESC NULLS LAST, published_at DESC NULLS LAST
+          AND (%s::date IS NULL OR {_EFFECTIVE_DATE} >= %s::date)
+          AND (%s::date IS NULL OR {_EFFECTIVE_DATE} <= %s::date)
+        ORDER BY COALESCE(i.date_occurred, i.date_reported) DESC NULLS LAST,
+                 i.published_at DESC NULLS LAST
         LIMIT %s
         """,
-        (statuses, pattern, pattern, pattern, pattern, limit),
+        (statuses, pattern, pattern, pattern, pattern, d_from, d_from, d_to, d_to, limit),
     )
 
 

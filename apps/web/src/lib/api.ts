@@ -2,6 +2,11 @@ import type { GeoBubble, IncidentDetail, IncidentSummary, ReviewItem } from "./t
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+export type DateRangeFilter = {
+  dateFrom?: string | null;
+  dateTo?: string | null;
+};
+
 async function getJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
@@ -17,24 +22,50 @@ async function getJson<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export function fetchBubbles(level: "lga" | "state" = "lga"): Promise<GeoBubble[]> {
-  return getJson(`/api/map/bubbles?level=${level}&min_status=reported`);
+function withDateParams(params: URLSearchParams, range?: DateRangeFilter) {
+  if (range?.dateFrom) params.set("date_from", range.dateFrom);
+  if (range?.dateTo) params.set("date_to", range.dateTo);
 }
 
-export function fetchBubbleIncidents(geoId: string): Promise<IncidentSummary[]> {
-  return getJson(`/api/map/bubbles/${encodeURIComponent(geoId)}/incidents`);
+export function fetchBubbles(
+  level: "lga" | "state" = "lga",
+  range?: DateRangeFilter,
+): Promise<GeoBubble[]> {
+  const params = new URLSearchParams({
+    level,
+    min_status: "reported",
+  });
+  withDateParams(params, range);
+  return getJson(`/api/map/bubbles?${params.toString()}`);
+}
+
+export function fetchBubbleIncidents(
+  geoId: string,
+  range?: DateRangeFilter,
+): Promise<IncidentSummary[]> {
+  const params = new URLSearchParams();
+  withDateParams(params, range);
+  const qs = params.toString();
+  return getJson(
+    `/api/map/bubbles/${encodeURIComponent(geoId)}/incidents${qs ? `?${qs}` : ""}`,
+  );
 }
 
 export function fetchIncident(id: string): Promise<IncidentDetail> {
   return getJson(`/api/incidents/${id}`);
 }
 
-export function searchIncidents(q: string, limit = 20): Promise<IncidentSummary[]> {
+export function searchIncidents(
+  q: string,
+  limit = 20,
+  range?: DateRangeFilter,
+): Promise<IncidentSummary[]> {
   const params = new URLSearchParams({
     q,
     limit: String(limit),
     min_status: "reported",
   });
+  withDateParams(params, range);
   return getJson(`/api/incidents/search?${params.toString()}`);
 }
 
