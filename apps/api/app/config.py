@@ -3,23 +3,32 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# apps/api/app/config.py -> repo root
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-
 
 def _env_files() -> tuple[str, ...]:
-    candidates = (
-        _REPO_ROOT / ".env",
-        _REPO_ROOT / ".env.local",
-        Path(".env"),
-        Path(".env.local"),
-    )
-    found = tuple(str(p) for p in candidates if p.is_file())
-    return found if found else (".env",)
+    """Load .env from repo root (local) and/or app cwd (Docker/Railway)."""
+    here = Path(__file__).resolve().parent
+    candidates: list[Path] = []
+    for root in (here, *here.parents):
+        candidates.append(root / ".env")
+        candidates.append(root / ".env.local")
+    candidates.extend([Path(".env"), Path(".env.local")])
+
+    found: list[str] = []
+    seen: set[str] = set()
+    for path in candidates:
+        try:
+            resolved = str(path.resolve())
+        except OSError:
+            continue
+        if resolved in seen or not path.is_file():
+            continue
+        seen.add(resolved)
+        found.append(str(path))
+    return tuple(found) if found else (".env",)
 
 
 class Settings(BaseSettings):
-    # Later files override earlier ones; .env.local wins over .env.
+    # Later files override earlier ones; .env.local wins over .env when both exist.
     model_config = SettingsConfigDict(env_file=_env_files(), extra="ignore")
 
     database_url: str = "postgresql://hummingbird:hummingbird@localhost:5432/hummingbird"
