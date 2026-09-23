@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""Daily Hummingbird pipeline: scrape → extract → cluster → verify → Postgres publish."""
+"""Daily Hummingbird pipeline: scrape → extract → cluster → verify → review queue."""
 
 from __future__ import annotations
 
@@ -18,7 +17,7 @@ from news_scraper import ingest_urls_to_bronze, run_news_ingest, write_demo_bron
 from extract import run_extract  # noqa: E402
 from cluster import run_cluster  # noqa: E402
 from verify import run_verify  # noqa: E402
-from postgres_sync import process_gold_candidates  # noqa: E402
+from postgres_sync import enqueue_candidates, process_gold_candidates  # noqa: E402
 
 
 def main() -> None:
@@ -26,6 +25,11 @@ def main() -> None:
     parser.add_argument("--demo", action="store_true", help="Use offline demo bronze")
     parser.add_argument("--limit", type=int, default=8, help="Articles per outlet")
     parser.add_argument("--skip-db", action="store_true", help="Stop after gold; do not write Postgres")
+    parser.add_argument(
+        "--enqueue-only",
+        action="store_true",
+        help="Only enqueue pending review items (never auto-publish)",
+    )
     parser.add_argument(
         "--urls",
         nargs="+",
@@ -55,8 +59,12 @@ def main() -> None:
     if args.skip_db:
         return
 
-    stats = process_gold_candidates(gold)
-    print(f"[daily] done: {stats}")
+    if args.enqueue_only:
+        n = enqueue_candidates(gold)
+        print(f"[daily] done: enqueued={n}")
+    else:
+        stats = process_gold_candidates(gold)
+        print(f"[daily] done: {stats}")
 
 
 if __name__ == "__main__":

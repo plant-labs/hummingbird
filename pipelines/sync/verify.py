@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from notify import require_human_approval
+
 ROOT = Path(__file__).resolve().parents[2]
 GOLD_DIR = ROOT / "data" / "gold"
 
@@ -17,6 +19,7 @@ GOLD_DIR = ROOT / "data" / "gold"
 HUMAN_REVIEW_FIELDS = {"casualties", "fatality_count"}
 
 # Default 1 so the live map fills from daily news; set to 2 for stricter methodology.
+# Ignored for map publish when REQUIRE_HUMAN_APPROVAL=true (default): those still enqueue.
 AUTO_PUBLISH_MIN_SOURCES = int(os.getenv("AUTO_PUBLISH_MIN_SOURCES", "1"))
 
 
@@ -25,6 +28,7 @@ def compute_verification(candidate: dict[str, Any]) -> tuple[str, str]:
 
     Routes:
       - auto_publish: enough independent outlets (or official), no casualty/headcount fields
+        (downgraded to review when REQUIRE_HUMAN_APPROVAL is true)
       - review: needs human (casualty fields, or weak cases still worth reviewing)
       - quarantine: too weak
     """
@@ -49,12 +53,25 @@ def compute_verification(candidate: dict[str, Any]) -> tuple[str, str]:
     )
 
     if strong and not needs_human and corroboration >= 1:
-        return status, "auto_publish"
+        route = "review" if require_human_approval() else "auto_publish"
+        return status, route
     if (strong or corroboration >= 1) and needs_human:
         return status, "review"
     if corroboration == 1:
         return "unconfirmed", "review"
     return "unconfirmed", "quarantine"
+
+
+def _primary_source_url(candidate: dict[str, Any]) -> str | None:
+    primary = candidate.get("primary") or {}
+    url = ((primary.get("bronze") or {}).get("url") or "").strip()
+    if url and "example.com" not in url:
+        return url
+    for m in candidate.get("members") or []:
+        u = ((m.get("bronze") or {}).get("url") or "").strip()
+        if u and "example.com" not in u:
+            return u
+    return None
 
 
 def run_verify(clustered_path: Path) -> Path:
@@ -86,6 +103,7 @@ def run_verify(clustered_path: Path) -> Path:
                     "current_status": primary_ext.get("current_status"),
                     "corroboration_count": candidate.get("corroboration_count"),
                     "verification_status": status,
+                    "source_url": _primary_source_url(candidate),
                 },
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }

@@ -36,6 +36,11 @@ railway init   # link plant-labs/hummingbird
 railway variables set DATABASE_URL="postgresql://..."
 railway variables set USE_DEMO_STORE=false
 railway variables set MODERATOR_TOKEN="..."
+railway variables set REQUIRE_HUMAN_APPROVAL=true
+railway variables set RESEND_API_KEY="..."
+railway variables set MODERATOR_NOTIFY_EMAIL="you@example.com"
+railway variables set NOTIFY_FROM_EMAIL="Hummingbird <onboarding@resend.dev>"
+railway variables set PUBLIC_WEB_URL="https://YOUR_VERCEL_DOMAIN"
 railway variables set CORS_ORIGINS="https://YOUR_VERCEL_DOMAIN"
 railway up
 ```
@@ -72,7 +77,9 @@ python pipelines/run_daily.py --demo
 
 Outlets include Punch (`/tags/kidnap/`), Premium Times, Vanguard, Daily Trust, BBC, TVC, Sahara Reporters, and Arise TV.
 
-Auto-publish writes map-ready incidents (casualty/headcount still go to `/moderation`).
+**Human approval (default):** new pipeline incidents and crowd tips go to `/moderation` as `pending` and are **not** published to the map until you approve. Set `REQUIRE_HUMAN_APPROVAL=false` only if you intentionally want auto-publish again.
+
+You get an email (Resend) and/or webhook when something new enters the queue.
 
 ## Env reference
 
@@ -82,8 +89,18 @@ Auto-publish writes map-ready incidents (casualty/headcount still go to `/modera
 | Railway | `USE_DEMO_STORE` | `false` |
 | Railway | `CORS_ORIGINS` | Vercel origin(s) |
 | Railway | `MODERATOR_TOKEN` | shared secret |
-| Railway | `REPORT_NOTIFY_WEBHOOK` | optional Slack/Discord URL for new tips |
+| Railway | `REQUIRE_HUMAN_APPROVAL` | default `true` — hold all new incidents for `/moderation` |
+| Railway | `RESEND_API_KEY` | Resend API key for review emails |
+| Railway | `MODERATOR_NOTIFY_EMAIL` | your inbox for review alerts |
+| Railway | `NOTIFY_FROM_EMAIL` | e.g. `Hummingbird <onboarding@resend.dev>` (or verified domain) |
+| Railway | `PUBLIC_WEB_URL` | Vercel origin for email deep links (no trailing slash) |
+| Railway | `REPORT_NOTIFY_WEBHOOK` | optional Slack/Discord URL for every pending item (tips + pipeline) |
+| Railway | `REVIEW_NOTIFY_WEBHOOK` | alias for `REPORT_NOTIFY_WEBHOOK` |
 | Vercel | `NEXT_PUBLIC_API_URL` | Railway origin |
 | Vercel | `NEXT_PUBLIC_MODERATOR_TOKEN` | same secret (Phase-1) |
 | GitHub Actions | `DATABASE_URL` | Neon |
-| Pipeline | `AUTO_PUBLISH_MIN_SOURCES` | default `1`; set `2` for stricter bar |
+| GitHub Actions | `RESEND_API_KEY` / `MODERATOR_NOTIFY_EMAIL` / `NOTIFY_FROM_EMAIL` / `PUBLIC_WEB_URL` | same as Railway (pipeline sends email on enqueue) |
+| GitHub Actions | `REPORT_NOTIFY_WEBHOOK` | optional |
+| Pipeline | `AUTO_PUBLISH_MIN_SOURCES` | only matters when `REQUIRE_HUMAN_APPROVAL=false` |
+| Pipeline | `REQUIRE_HUMAN_APPROVAL` | default `true` |
+

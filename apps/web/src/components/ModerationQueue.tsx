@@ -5,6 +5,15 @@ import { approveReview, fetchReviewQueue, rejectReview } from "@/lib/api";
 import type { ReviewItem } from "@/lib/types";
 import Link from "next/link";
 
+function primarySourceUrl(item: ReviewItem): string | null {
+  const preview = item.candidate_json?.publish_preview;
+  if (preview?.source_url) return preview.source_url;
+  const tip = item.candidate_json?.tip;
+  // Tip source lives on publish_preview when submitted via /report
+  void tip;
+  return null;
+}
+
 export default function ModerationQueue() {
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -55,7 +64,7 @@ export default function ModerationQueue() {
         </Link>
         <h1 className="mt-3 font-display text-4xl text-ink">Review queue</h1>
         <p className="mt-2 max-w-2xl text-sm text-ink/70">
-          Human gate before publish. Casualty and headcount fields always land here. Approving
+          Human gate before publish. Pipeline news and crowd tips both land here. Approving
           elevates a candidate onto the public map with source citations.
         </p>
         {error && <p className="mt-4 text-sm text-alert">{error}</p>}
@@ -70,14 +79,23 @@ export default function ModerationQueue() {
             const preview = item.candidate_json?.publish_preview || {};
             const tip = item.candidate_json?.tip;
             const isCrowd = item.candidate_json?.route === "crowd_tip";
+            const sourceUrl = primarySourceUrl(item);
             return (
               <li key={item.queue_id} className="border border-ink/10 bg-white/70 p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.16em] text-moss/70">
-                      {preview.event_type || "unknown"} · priority {item.priority}
-                      {isCrowd ? " · crowd tip" : ""}
-                    </p>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`px-2 py-0.5 text-[11px] uppercase tracking-wide ${
+                          isCrowd ? "bg-alert/15 text-alert" : "bg-fern/15 text-fern"
+                        }`}
+                      >
+                        {isCrowd ? "Crowd tip" : "Pipeline"}
+                      </span>
+                      <p className="text-xs uppercase tracking-[0.16em] text-moss/70">
+                        {preview.event_type || "unknown"} · priority {item.priority}
+                      </p>
+                    </div>
                     <h2 className="mt-1 font-display text-2xl text-ink">
                       {preview.headline || "Untitled candidate"}
                     </h2>
@@ -97,16 +115,16 @@ export default function ModerationQueue() {
                       <p className="mt-3 text-sm leading-relaxed text-ink/75">{tip.description}</p>
                     )}
                     <div className="mt-2 space-y-1 text-xs text-ink/55">
-                      {preview.source_url && (
-                        <p>
+                      {sourceUrl && (
+                        <p className="break-all">
                           Source:{" "}
                           <a
-                            href={preview.source_url}
+                            href={sourceUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="text-fern underline-offset-2 hover:underline"
+                            className="font-medium text-fern underline-offset-2 hover:underline"
                           >
-                            {preview.source_url}
+                            {sourceUrl}
                           </a>
                         </p>
                       )}

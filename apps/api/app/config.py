@@ -36,12 +36,25 @@ class Settings(BaseSettings):
     moderator_token: str = "dev-moderator-token"
     # Production must set USE_DEMO_STORE=false and DATABASE_URL.
     use_demo_store: bool = False
-    # Optional Slack/Discord/generic webhook for new crowd tips.
     report_notify_webhook: str = ""
+    # Alias for report_notify_webhook; either works for review notifications.
+    review_notify_webhook: str = ""
+    # Resend email alerts when items enter the review queue.
+    resend_api_key: str = ""
+    moderator_notify_email: str = ""
+    notify_from_email: str = "Hummingbird <onboarding@resend.dev>"
+    # Public site origin for moderation deep links in emails (no trailing slash).
+    public_web_url: str = ""
+    # When true (default), pipeline never auto-publishes to the map.
+    require_human_approval: bool = True
 
     @property
     def origins(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def effective_review_webhook(self) -> str:
+        return (self.review_notify_webhook or self.report_notify_webhook or "").strip()
 
 
 @lru_cache

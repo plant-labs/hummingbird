@@ -4,7 +4,10 @@ import asyncio
 import base64
 import json
 import logging
+import os
+import sys
 from datetime import date, datetime, timezone
+from pathlib import Path
 from typing import Any, AsyncIterator
 from uuid import uuid4
 
@@ -670,24 +673,22 @@ def _build_tip_candidate(
 
 
 def _notify_new_report(candidate: dict[str, Any]) -> bool:
+    """Notify moderators that a tip (or any pending item) needs review."""
     settings = get_settings()
-    webhook = (settings.report_notify_webhook or "").strip()
+    # Push settings into env so the shared notifier (also used by the pipeline) sees them.
+    if settings.resend_api_key and not os.environ.get("RESEND_API_KEY"):
+        os.environ["RESEND_API_KEY"] = settings.resend_api_key
+    if settings.moderator_notify_email and not os.environ.get("MODERATOR_NOTIFY_EMAIL"):
+        os.environ["MODERATOR_NOTIFY_EMAIL"] = settings.moderator_notify_email
+    if settings.notify_from_email and not os.environ.get("NOTIFY_FROM_EMAIL"):
+        os.environ["NOTIFY_FROM_EMAIL"] = settings.notify_from_email
+    if settings.public_web_url and not os.environ.get("PUBLIC_WEB_URL"):
+        os.environ["PUBLIC_WEB_URL"] = settings.public_web_url
+    webhook = settings.effective_review_webhook
+    if webhook:
+        os.environ["REVIEW_NOTIFY_WEBHOOK"] = webhook
+
     preview = candidate.get("publish_preview") or {}
-    tip = candidate.get("tip") or {}
-    payload = {
-        "text": (
-            f"New Hummingbird tip: {preview.get('headline')} "
-            f"({preview.get('event_type')} · {preview.get('state')})"
-        ),
-        "queue_id": candidate.get("queue_id"),
-        "event_type": preview.get("event_type"),
-        "state": preview.get("state"),
-        "lga": preview.get("lga"),
-        "headline": preview.get("headline"),
-        "source_url": preview.get("source_url"),
-        "has_attachment": preview.get("has_attachment"),
-        "contact_email": tip.get("contact_email"),
-    }
     logger.info(
         "crowd tip queued queue_id=%s headline=%s state=%s attachment=%s",
         candidate.get("queue_id"),
@@ -695,16 +696,15 @@ def _notify_new_report(candidate: dict[str, Any]) -> bool:
         preview.get("state"),
         preview.get("has_attachment"),
     )
-    if not webhook:
-        return False
     try:
-        with httpx.Client(timeout=10.0) as client:
-            resp = client.post(webhook, json=payload)
-            resp.raise_for_status()
-        return True
-    except Exception:
-        logger.exception("report notify webhook failed")
-        return False
+        from notify import notify_pending_review
+    except ImportError:
+        sync_dir = Path(__file__).resolve().parents[3] / "pipelines" / "sync"
+        if str(sync_dir) not in sys.path:
+            sys.path.insert(0, str(sync_dir))
+        from notify import notify_pending_review  # type: ignore
+
+    return notify_pending_review(candidate)
 
 
 @router.post("/reports", response_model=ReportResponse)

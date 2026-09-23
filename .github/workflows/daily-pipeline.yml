@@ -30,4 +30,10 @@ jobs:
       - name: Run daily pipeline
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python pipelines/run_daily.py --limit 8
+          REQUIRE_HUMAN_APPROVAL: "true"
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          MODERATOR_NOTIFY_EMAIL: ${{ secrets.MODERATOR_NOTIFY_EMAIL }}
+          NOTIFY_FROM_EMAIL: ${{ secrets.NOTIFY_FROM_EMAIL }}
+          PUBLIC_WEB_URL: ${{ secrets.PUBLIC_WEB_URL }}
+          REPORT_NOTIFY_WEBHOOK: ${{ secrets.REPORT_NOTIFY_WEBHOOK }}
+        run: python pipelines/run_daily.py --limit 8 --enqueue-only

@@ -15,6 +15,7 @@ from psycopg.types.json import Json
 
 from hummingbird_schemas.geo import centroid_for_lga
 from db_url import normalize_database_url
+from notify import notify_pending_review, require_human_approval
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -50,7 +51,9 @@ def enqueue_candidates(gold_path: Path) -> int:
                             item.get("reason"),
                         ),
                     )
-                    count += 1
+                    if cur.rowcount:
+                        count += 1
+                        notify_pending_review(item)
         conn.commit()
     print(f"[sync] enqueued {count} review items")
     return count
@@ -145,7 +148,8 @@ def _attach_sources_to_incident(cur, incident_id: UUID, source_ids: list[UUID]) 
 
 
 def process_gold_candidates(gold_path: Path) -> dict[str, int]:
-    """Auto-publish strong candidates; enqueue the rest for human review."""
+    """Enqueue candidates for human review; optionally auto-publish when approval is off."""
+    human_gate = require_human_approval()
     stats = {
         "auto_published": 0,
         "enqueued": 0,
@@ -171,32 +175,8 @@ def process_gold_candidates(gold_path: Path) -> dict[str, int]:
                         stats["skipped_duplicate"] += 1
                         continue
 
-                    if route == "auto_publish":
-                        verification = item.get("verification_status") or "reported"
-                        incident_id, created = publish_incident_from_candidate(
-                            cur, item, verification_status=verification
-                        )
-                        cur.execute(
-                            """
-                            INSERT INTO review_queue (
-                              queue_id, incident_id, candidate_json, status, priority, reason,
-                              reviewed_at, reviewed_by
-                            ) VALUES (%s, %s, %s, 'approved', %s, %s, now(), 'auto_publish')
-                            ON CONFLICT (queue_id) DO NOTHING
-                            """,
-                            (
-                                item["queue_id"],
-                                str(incident_id),
-                                Json(item),
-                                item.get("priority", 20),
-                                item.get("reason"),
-                            ),
-                        )
-                        if created:
-                            stats["auto_published"] += 1
-                        else:
-                            stats["merged_into_existing"] += 1
-                    else:
+                    # Human approval gate: never publish until /moderation approve.
+                    if human_gate or route != "auto_publish":
                         cur.execute(
                             """
                             INSERT INTO review_queue (queue_id, candidate_json, status, priority, reason)
@@ -210,12 +190,40 @@ def process_gold_candidates(gold_path: Path) -> dict[str, int]:
                                 item.get("reason"),
                             ),
                         )
-                        stats["enqueued"] += 1
+                        if cur.rowcount:
+                            stats["enqueued"] += 1
+                            notify_pending_review(item)
+                        continue
+
+                    verification = item.get("verification_status") or "reported"
+                    incident_id, created = publish_incident_from_candidate(
+                        cur, item, verification_status=verification
+                    )
+                    cur.execute(
+                        """
+                        INSERT INTO review_queue (
+                          queue_id, incident_id, candidate_json, status, priority, reason,
+                          reviewed_at, reviewed_by
+                        ) VALUES (%s, %s, %s, 'approved', %s, %s, now(), 'auto_publish')
+                        ON CONFLICT (queue_id) DO NOTHING
+                        """,
+                        (
+                            item["queue_id"],
+                            str(incident_id),
+                            Json(item),
+                            item.get("priority", 20),
+                            item.get("reason"),
+                        ),
+                    )
+                    if created:
+                        stats["auto_published"] += 1
+                    else:
+                        stats["merged_into_existing"] += 1
 
             if stats["auto_published"] or stats["merged_into_existing"]:
                 cur.execute("SELECT refresh_geo_agg_cache()")
         conn.commit()
-    print(f"[sync] {stats}")
+    print(f"[sync] human_approval={human_gate} {stats}")
     return stats
 
 
