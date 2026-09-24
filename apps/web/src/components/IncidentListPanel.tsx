@@ -10,7 +10,7 @@ type Props = {
   count: number;
   incidents: IncidentSummary[];
   loading: boolean;
-  onSelectIncident: (id: string) => void;
+  onSelectIncident: (incident: IncidentSummary) => void;
   onClose: () => void;
   eyebrow?: string;
   emptyMessage?: string;
@@ -65,7 +65,7 @@ export default function IncidentListPanel({
                 <li key={inc.incident_id}>
                   <button
                     type="button"
-                    onClick={() => onSelectIncident(inc.incident_id)}
+                    onClick={() => onSelectIncident(inc)}
                     className="w-full border border-ink/10 bg-white/70 px-4 py-3 text-left transition hover:border-fern/40 hover:bg-white"
                   >
                     <div className="flex items-center justify-between gap-2 text-[11px] uppercase tracking-wide text-ink/55">

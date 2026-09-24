@@ -50,7 +50,16 @@ COUNT_RE = re.compile(
 )
 
 STATUS_PATTERNS: list[tuple[IncidentStatus, re.Pattern[str]]] = [
-    (IncidentStatus.RELEASED, re.compile(r"\b(released|freed)\b", re.I)),
+    # Require victim/hostage context — bare "released" matches "report released yesterday".
+    (
+        IncidentStatus.RELEASED,
+        re.compile(
+            r"\b(?:victims?|hostages?|abductees?|kidnappe[sd]|captives?)"
+            r"(?:\s+\w+){0,6}\s+(?:were\s+|was\s+)?(?:released|freed)\b"
+            r"|\b(?:released|freed)\s+(?:the\s+)?(?:victims?|hostages?|abductees?|kidnappe[sd]|captives?)\b",
+            re.I,
+        ),
+    ),
     (IncidentStatus.RESCUED, re.compile(r"\b(rescued)\b", re.I)),
     (IncidentStatus.IN_NEGOTIATION, re.compile(r"\b(negotiat)\b", re.I)),
     (IncidentStatus.CASUALTY_CONFIRMED, re.compile(r"\b(killed|fatalit|dead)\b", re.I)),

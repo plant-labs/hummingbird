@@ -2,10 +2,48 @@ import type { GeoBubble, IncidentDetail, IncidentSummary, ReviewItem } from "./t
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+const DETAIL_TTL_MS = 60_000;
+
+type DetailCacheEntry = {
+  detail: IncidentDetail;
+  fetchedAt: number;
+};
+
+const detailCache = new Map<string, DetailCacheEntry>();
+
 export type DateRangeFilter = {
   dateFrom?: string | null;
   dateTo?: string | null;
 };
+
+export function invalidateIncidentCache(): void {
+  detailCache.clear();
+}
+
+export function getCachedIncident(
+  id: string,
+): { detail: IncidentDetail; fresh: boolean } | null {
+  const entry = detailCache.get(id);
+  if (!entry) return null;
+  return {
+    detail: entry.detail,
+    fresh: Date.now() - entry.fetchedAt < DETAIL_TTL_MS,
+  };
+}
+
+function setCachedIncident(id: string, detail: IncidentDetail): void {
+  detailCache.set(id, { detail, fetchedAt: Date.now() });
+}
+
+/** Build a header-ready partial detail from list/search summary (body empty until fetch). */
+export function summaryToPartialDetail(summary: IncidentSummary): IncidentDetail {
+  return {
+    ...summary,
+    fields: [],
+    status_history: [],
+    sources: [],
+  };
+}
 
 async function getJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -51,8 +89,10 @@ export function fetchBubbleIncidents(
   );
 }
 
-export function fetchIncident(id: string): Promise<IncidentDetail> {
-  return getJson(`/api/incidents/${id}`);
+export async function fetchIncident(id: string): Promise<IncidentDetail> {
+  const detail = await getJson<IncidentDetail>(`/api/incidents/${id}`);
+  setCachedIncident(id, detail);
+  return detail;
 }
 
 export function searchIncidents(
@@ -106,7 +146,8 @@ export async function submitIncidentReport(
     try {
       const body = await res.json();
       if (typeof body?.detail === "string") detail = body.detail;
-      else if (Array.isArray(body?.detail)) detail = body.detail.map((d: { msg?: string }) => d.msg).join("; ");
+      else if (Array.isArray(body?.detail))
+        detail = body.detail.map((d: { msg?: string }) => d.msg).join("; ");
     } catch {
       /* ignore */
     }

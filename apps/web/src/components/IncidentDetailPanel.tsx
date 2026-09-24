@@ -33,6 +33,9 @@ export default function IncidentDetailPanel({ detail, loading, onBack }: Props) 
   const rank = verificationRank(detail?.verification_status);
   const vTone = verificationTone(detail?.verification_status);
   const oTone = outcomeTone(detail?.current_status);
+  const cited = (detail?.fields || []).filter((f) => f.field_name !== "current_status");
+  // Body sections wait on first fetch; quiet revalidate keeps showing prior body.
+  const showBodySpinner = Boolean(loading && detail);
 
   return (
     <aside className="pointer-events-auto flex h-full w-full max-w-md flex-col border-l border-ink/10 bg-mist/95 shadow-[-16px_0_40px_rgba(20,32,27,0.12)] backdrop-blur-md">
@@ -100,15 +103,20 @@ export default function IncidentDetailPanel({ detail, loading, onBack }: Props) 
             <LoadingIndicator label="Loading detail…" />
           </div>
         )}
-        {detail && (
+        {detail && showBodySpinner && (
+          <div className="flex justify-center py-8">
+            <LoadingIndicator label="Loading sources & citations…" />
+          </div>
+        )}
+        {detail && !showBodySpinner && (
           <>
             <section>
               <h3 className="text-xs uppercase tracking-[0.16em] text-moss/70">Cited facts</h3>
-              {detail.fields.length === 0 ? (
+              {cited.length === 0 ? (
                 <p className="mt-2 text-sm text-ink/60">No structured fields yet.</p>
               ) : (
                 <ul className="mt-2 space-y-3">
-                  {detail.fields.map((f, idx) => (
+                  {cited.map((f, idx) => (
                     <li key={`${f.field_name}-${idx}`} className="border-b border-ink/5 pb-3">
                       <p className="text-xs uppercase tracking-wide text-ink/50">{f.field_name}</p>
                       <p className="font-medium text-ink">{String(f.value)}</p>
@@ -142,25 +150,29 @@ export default function IncidentDetailPanel({ detail, loading, onBack }: Props) 
 
             <section>
               <h3 className="text-xs uppercase tracking-[0.16em] text-moss/70">Sources</h3>
-              <ul className="mt-2 space-y-3">
-                {detail.sources.map((s) => (
-                  <li key={s.source.source_id} className="bg-white/60 p-3">
-                    <div className="flex items-center justify-between gap-2 text-xs uppercase tracking-wide text-ink/50">
-                      <span>{s.source.outlet}</span>
-                      <span>{s.role}</span>
-                    </div>
-                    <p className="mt-1 text-sm text-ink/80">{s.source.excerpt}</p>
-                    <a
-                      href={s.source.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-2 inline-block text-sm text-signal underline-offset-2 hover:underline"
-                    >
-                      Open original source
-                    </a>
-                  </li>
-                ))}
-              </ul>
+              {detail.sources.length === 0 ? (
+                <p className="mt-2 text-sm text-ink/60">No sources linked yet.</p>
+              ) : (
+                <ul className="mt-2 space-y-3">
+                  {detail.sources.map((s) => (
+                    <li key={s.source.source_id} className="bg-white/60 p-3">
+                      <div className="flex items-center justify-between gap-2 text-xs uppercase tracking-wide text-ink/50">
+                        <span>{s.source.outlet}</span>
+                        <span>{s.role}</span>
+                      </div>
+                      <p className="mt-1 text-sm text-ink/80">{s.source.excerpt}</p>
+                      <a
+                        href={s.source.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 inline-block text-sm text-signal underline-offset-2 hover:underline"
+                      >
+                        Open original source
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </section>
           </>
         )}

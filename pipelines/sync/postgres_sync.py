@@ -228,6 +228,15 @@ def process_gold_candidates(gold_path: Path) -> dict[str, int]:
 
 
 
+def _row_scalar(row: Any, key: str) -> Any:
+    """Support both tuple and dict_row cursors."""
+    if row is None:
+        raise RuntimeError(f"expected a row with {key}")
+    if isinstance(row, dict):
+        return row[key]
+    return row[0]
+
+
 def _upsert_source(cur, bronze: dict[str, Any]) -> UUID:
     url = bronze.get("url") or f"urn:hummingbird:{bronze.get('content_hash')}"
     if "example.com" in str(url):
@@ -251,8 +260,7 @@ def _upsert_source(cur, bronze: dict[str, Any]) -> UUID:
             (bronze.get("body") or "")[:280],
         ),
     )
-    row = cur.fetchone()
-    return row[0]
+    return _row_scalar(cur.fetchone(), "source_id")
 
 
 
@@ -334,7 +342,7 @@ def publish_incident_from_candidate(
             headline,
         ),
     )
-    incident_id = cur.fetchone()[0]
+    incident_id = _row_scalar(cur.fetchone(), "incident_id")
 
     _attach_sources_to_incident(cur, incident_id, source_ids)
     primary_source = source_ids[0]

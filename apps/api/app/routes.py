@@ -388,50 +388,73 @@ def search_incidents(
 
 @router.get("/incidents/{incident_id}")
 def incident_detail(incident_id: str) -> dict[str, Any]:
-    if not db_available():
+    if get_settings().use_demo_store:
         detail = demo_store.get_incident(incident_id)
         if not detail:
             raise HTTPException(404, "Incident not found")
         return detail
 
-    incident = fetch_one(
-        """
-        SELECT incident_id, event_type, date_occurred, date_reported, state, lga,
-               ST_Y(geom::geometry) AS lat, ST_X(geom::geometry) AS lng,
-               location_precision, verification_status, confidence_score,
-               corroboration_count, current_status, headline, published_at
-        FROM incidents WHERE incident_id = %s
-        """,
-        (incident_id,),
-    )
-    if not incident:
-        raise HTTPException(404, "Incident not found")
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT incident_id, event_type, date_occurred, date_reported, state, lga,
+                           ST_Y(geom::geometry) AS lat, ST_X(geom::geometry) AS lng,
+                           location_precision, verification_status, confidence_score,
+                           corroboration_count, current_status, headline, published_at
+                    FROM incidents WHERE incident_id = %s
+                    """,
+                    (incident_id,),
+                )
+                incident = cur.fetchone()
+                if not incident:
+                    raise HTTPException(404, "Incident not found")
 
-    fields = fetch_all(
-        """
-        SELECT field_name, value_json AS value, source_id, source_span, confidence
-        FROM incident_fields WHERE incident_id = %s
-        """,
-        (incident_id,),
-    )
-    history = fetch_all(
-        """
-        SELECT from_status, to_status, changed_at, source_id, note
-        FROM status_history WHERE incident_id = %s ORDER BY changed_at
-        """,
-        (incident_id,),
-    )
-    sources = fetch_all(
-        """
-        SELECT isrc.role, s.source_id, s.url, s.outlet, s.source_type, s.fetched_at,
-               s.reliability_tier, s.excerpt, s.published_at
-        FROM incident_sources isrc
-        JOIN sources s ON s.source_id = isrc.source_id
-        WHERE isrc.incident_id = %s
-        ORDER BY isrc.linked_at
-        """,
-        (incident_id,),
-    )
+                cur.execute(
+                    """
+                    SELECT field_name, value_json AS value, source_id, source_span, confidence
+                    FROM incident_fields WHERE incident_id = %s
+                    """,
+                    (incident_id,),
+                )
+                fields = list(cur.fetchall())
+
+                cur.execute(
+                    """
+                    SELECT from_status, to_status, changed_at, source_id, note
+                    FROM status_history WHERE incident_id = %s ORDER BY changed_at
+                    """,
+                    (incident_id,),
+                )
+                history = list(cur.fetchall())
+
+                cur.execute(
+                    """
+                    SELECT isrc.role, s.source_id, s.url, s.outlet, s.source_type, s.fetched_at,
+                           s.reliability_tier, s.excerpt, s.published_at
+                    FROM incident_sources isrc
+                    JOIN sources s ON s.source_id = isrc.source_id
+                    WHERE isrc.incident_id = %s
+                    ORDER BY isrc.linked_at
+                    """,
+                    (incident_id,),
+                )
+                sources = list(cur.fetchall())
+    except HTTPException:
+        raise
+    except Exception:
+        detail = demo_store.get_incident(incident_id)
+        if detail:
+            return detail
+        raise HTTPException(503, "Database unavailable")
+
+    # Keep cited current_status in sync with the live incident column.
+    live_status = incident["current_status"]
+    fields = [
+        {**f, "value": live_status} if f.get("field_name") == "current_status" else f
+        for f in fields
+    ]
     return {
         **incident,
         "fields": fields,

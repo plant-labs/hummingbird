@@ -6,7 +6,10 @@ import {
   fetchBubbleIncidents,
   fetchBubbles,
   fetchIncident,
+  getCachedIncident,
+  invalidateIncidentCache,
   searchIncidents,
+  summaryToPartialDetail,
   API_BASE,
   type DateRangeFilter,
 } from "@/lib/api";
@@ -75,6 +78,7 @@ export default function MapExplorer() {
     setSearchQuery("");
     setSearchOpen(false);
     setFocusPoint(null);
+    invalidateIncidentCache();
   }, []);
 
   const loadBubbles = useCallback(async () => {
@@ -99,6 +103,7 @@ export default function MapExplorer() {
 
   useEffect(() => {
     // Date range change invalidates open list/detail (counts no longer match).
+    invalidateIncidentCache();
     setSelected(null);
     setDetail(null);
     setIncidents([]);
@@ -185,6 +190,7 @@ export default function MapExplorer() {
       setDetail(null);
       setSearchLabel(q);
       setListLoading(true);
+      invalidateIncidentCache();
       try {
         const rows = await searchIncidents(q, 20, {
           dateFrom: dateFrom || null,
@@ -211,6 +217,7 @@ export default function MapExplorer() {
     setSelected(bubble);
     setDetail(null);
     setListLoading(true);
+    invalidateIncidentCache();
     try {
       const rows = await fetchBubbleIncidents(bubble.geo_id, dateRange);
       setIncidents(rows);
@@ -221,23 +228,49 @@ export default function MapExplorer() {
     }
   };
 
-  const onSelectIncident = async (id: string) => {
+  const flyToIncident = (inc: IncidentSummary | IncidentDetail) => {
+    if (
+      inc.lat != null &&
+      inc.lng != null &&
+      Number.isFinite(Number(inc.lat)) &&
+      Number.isFinite(Number(inc.lng))
+    ) {
+      setFocusPoint({
+        lat: Number(inc.lat),
+        lng: Number(inc.lng),
+        key: `${inc.incident_id}-${Date.now()}`,
+      });
+    }
+  };
+
+  const onSelectIncident = async (summary: IncidentSummary) => {
+    const id = summary.incident_id;
+    flyToIncident(summary);
+
+    const cached = getCachedIncident(id);
+    if (cached) {
+      setDetail(cached.detail);
+      setDetailLoading(false);
+      if (cached.fresh) return;
+      // Stale: quiet background revalidate; keep showing cached body.
+      try {
+        const d = await fetchIncident(id);
+        setDetail(d);
+        flyToIncident(d);
+      } catch {
+        /* keep cached detail */
+      }
+      return;
+    }
+
+    // Cache miss: paint header from list summary, load body.
+    setDetail(summaryToPartialDetail(summary));
     setDetailLoading(true);
     try {
       const d = await fetchIncident(id);
       setDetail(d);
-      if (
-        d.lat != null &&
-        d.lng != null &&
-        Number.isFinite(Number(d.lat)) &&
-        Number.isFinite(Number(d.lng))
-      ) {
-        setFocusPoint({
-          lat: Number(d.lat),
-          lng: Number(d.lng),
-          key: `${d.incident_id}-${Date.now()}`,
-        });
-      }
+      flyToIncident(d);
+      setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load incident");
     } finally {
@@ -394,8 +427,16 @@ export default function MapExplorer() {
               <h1 className="font-display text-4xl text-ink md:text-5xl">Hummingbird</h1>
             </div>
             <p className="mt-2 max-w-md text-sm leading-relaxed text-ink/75 md:text-base">
-              Live incidents across 36 states — every claim grounded in a source. Click a heat
-              bubble to explore.
+              Live incidents across 36 states in Nigeria. Every claim is grounded in a source.
+              Click a heat bubble to explore. Track your loved ones using{" "}
+              <a
+                href="https://www.life360.com/en-de/location-sharing?icid=nav_fam_loc_eu"
+                target="_blank"
+                rel="noreferrer"
+                className="text-fern underline-offset-2 hover:underline"
+              >
+                life360.com
+              </a>
             </p>
 
             <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-ink/60">
